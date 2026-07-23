@@ -1,11 +1,15 @@
 {
   "name": "pokemon-price-database",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "update": "node scripts/update-prices.mjs",
+    "catalog": "node scripts/build-catalog.mjs",
+    "shard": "node scripts/process-shard.mjs",
+    "consolidate": "node scripts/consolidate.mjs",
     "validate": "node scripts/validate-output.mjs"
   },
-  "engines": {"node": ">=20"}
+  "engines": {
+    "node": ">=20"
+  }
 }

@@ -1,36 +1,38 @@
-# Pokémon Price Database Brasil
+# Pokémon Price Database Brasil v0.3
 
-Central externa de preços para o Fichário Pokémon. O GitHub Actions atualiza os dados diariamente e publica:
+Central externa de preços do Fichário Pokémon.
 
-- `output/prices-current.json`: tabela atual consumida pelo app.
+## Como funciona
+
+1. Um job gera o catálogo consolidado em português, inglês e japonês.
+2. O catálogo é dividido de forma determinística em 12 lotes.
+3. Doze trabalhadores processam os lotes em paralelo.
+4. Um job final consolida os resultados e publica um único banco.
+5. Os preços anteriores são preservados caso uma fonte deixe de responder temporariamente.
+6. Um arquivo diário registra apenas os preços que mudaram, evitando histórico gigantesco.
+
+## Arquivos publicados
+
+- `output/prices-current.json`: banco atual para o aplicativo.
+- `output/status.json`: status da última atualização.
 - `output/unmatched-cards.json`: cartas/variantes sem preço público.
+- `history/YYYY-MM-DD-changes.json`: variações do dia.
+- `cache/shards/`: último resultado de cada trabalhador.
 
-## Fontes iniciais
+## Agendamento
 
-- Cardmarket e TCGplayer via TCGdex.
-- Preços brasileiros adicionados em `data/br-prices.csv`.
+A atualização automática roda todos os dias às 03:00 no horário de Brasília. Também pode ser iniciada manualmente em **Actions → Atualizar tabela de preços em paralelo → Run workflow**.
 
-O cálculo dá prioridade aos preços brasileiros. Quando eles não existem, utiliza referências internacionais com peso menor. Valores claramente fora do conjunto são removidos como outliers.
+## Permissão necessária
 
-## Como instalar
+No GitHub, abra **Settings → Actions → General → Workflow permissions** e marque **Read and write permissions**.
 
-1. Crie um repositório novo no GitHub, por exemplo `pokemon-price-database`.
-2. Copie todo o conteúdo deste projeto para ele.
-3. Em **Settings → Actions → General**, permita `Read and write permissions` para workflows.
-4. Abra **Actions → Atualizar tabela de preços → Run workflow**.
-5. Após terminar, o arquivo estará em `output/prices-current.json`.
+## Fontes
 
-## Adicionar preços brasileiros
+- TCGdex para catálogo e dados estruturados de Cardmarket/TCGplayer.
+- `data/br-prices.csv` para referências brasileiras verificadas.
+- Frankfurter para conversão de EUR/USD para BRL.
 
-Edite `data/br-prices.csv`:
+## Observação
 
-```csv
-card_id,finish,source,price_brl,url,observed_at
-sv3pt5-199,holo,liga,999.90,https://...,2026-07-23
-```
-
-É possível adicionar várias fontes para a mesma carta. O agregador usa mediana, pesos e remoção de valores muito discrepantes.
-
-## Próximos provedores brasileiros
-
-Liga Pokémon e MYP Cards devem entrar como coletores separados somente depois de validar estabilidade e termos de uso. Não coloque senhas ou tokens dentro do aplicativo.
+A primeira execução ainda consulta todas as cartas, mas agora faz isso em 12 lotes paralelos. As execuções posteriores reaproveitam os preços existentes e preservam valores antigos quando uma consulta falha.

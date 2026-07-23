@@ -1,24 +1,94 @@
-name: Atualizar tabela de preços
+name: Atualizar tabela de preços em paralelo
+
 on:
   workflow_dispatch:
   schedule:
-    - cron: '15 6 * * *'
+    # 06:00 UTC = 03:00 no horário de Brasília.
+    - cron: '0 6 * * *'
+
 permissions:
   contents: write
+
+env:
+  SHARD_COUNT: 12
+
+concurrency:
+  group: pokemon-price-database-update
+  cancel-in-progress: false
+
 jobs:
-  update:
+  catalog:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - run: npm run update
-      - run: npm run validate
-      - name: Publicar arquivos atualizados
+      - name: Gerar catálogo consolidado
+        run: npm run catalog
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catalog
+          path: work/catalog.json
+          retention-days: 2
+
+  prices:
+    needs: catalog
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/download-artifact@v4
+        with:
+          name: catalog
+          path: work
+      - name: Processar lote ${{ matrix.shard }}
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+        run: npm run shard
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shard-${{ matrix.shard }}
+          path: work/shards/*.json
+          retention-days: 2
+
+  consolidate:
+    needs: [catalog, prices]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/download-artifact@v4
+        with:
+          name: catalog
+          path: work
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: shard-*
+          path: work/shards
+          merge-multiple: true
+      - name: Consolidar resultados e histórico
+        run: npm run consolidate
+      - name: Validar banco final
+        run: npm run validate
+      - name: Publicar banco atualizado
         run: |
           git config user.name "pokemon-price-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add output/prices-current.json output/unmatched-cards.json
+          git add output/ cache/shards/ history/
           git diff --cached --quiet || git commit -m "Atualizar preços $(date -u +%F)"
           git push
