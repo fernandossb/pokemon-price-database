@@ -1,0 +1,194 @@
+{
+  "status": "complete",
+  "generatedAt": "2026-07-23T15:34:15.050Z",
+  "date": "2026-07-23",
+  "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
+  "cardsInCatalog": 31589,
+  "shardsExpected": 12,
+  "shardsCompleted": 12,
+  "variantsPriced": 31277,
+  "unmatched": 9716,
+  "changedPrices": 31277,
+  "workers": [
+    {
+      "shardIndex": 0,
+      "shardCount": 12,
+      "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
+      "generatedAt": "2026-07-23T15:33:12.432Z",
+      "cardsAssigned": 2633,
+      "variantsPriced": 2627,
+      "unmatched": 796,
+      "fx": {
+        "eurBrl": 5.7775,
+        "usdBrl": 5.07154143258427,
+        "date": "2026-07-23",
+        "fallback": false
+      }
+    },
+    {
+      "shardIndex": 1,
+      "shardCount": 12,
+      "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
+      "generatedAt": "2026-07-23T15:33:22.312Z",
+      "cardsAssigned": 2633,
+      "variantsPriced": 2565,
+      "unmatched": 836,
+      "fx": {
+        "eurBrl": 5.7775,
+        "usdBrl": 5.07154143258427,
+        "date": "2026-07-23",
+        "fallback": false
+      }
+    },
+    {
+      "shardIndex": 2,
+      "shardCount": 12,
+      "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
+      "generatedAt": "2026-07-23T15:32:56.016Z",
+      "cardsAssigned": 2633,
+      "variantsPriced": 2617,
+      "unmatched": 817,
+      "fx": {
+        "eurBrl": 5.7775,
+        "usdBrl": 5.07154143258427,
+        "date": "2026-07-23",
+        "fallback": false
+      }
+    },
+    {
+      "shardIndex": 3,
+      "shardCount": 12,
+      "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
+      "generatedAt": "2026-07-23T15:33:48.779Z",
+      "cardsAssigned": 2633,
+      "variantsPriced": 2597,
+      "unmatched": 810,
+      "fx": {
+        "eurBrl": 5.7775,
+        "usdBrl": 5.07154143258427,
+        "date": "2026-07-23",
+        "fallback": false
+      }
+    },
+    {
+      "shardIndex": 4,
+      "shardCount": 12,
+      "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
+      "generatedAt": "2026-07-23T15:32:56.431Z",
+      "cardsAssigned": 2633,
+      "variantsPriced": 2640,
+      "unmatched": 794,
+      "fx": {
+        "eurBrl": 5.7775,
+        "usdBrl": 5.07154143258427,
+        "date": "2026-07-23",
+        "fallback": false
+      }
+    },
+    {
+      "shardIndex": 5,
+      "shardCount": 12,
+      "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
+      "generatedAt": "2026-07-23T15:33:58.832Z",
+      "cardsAssigned": 2632,
+      "variantsPriced": 2588,
+      "unmatched": 816,
+      "fx": {
+        "eurBrl": 5.7775,
+        "usdBrl": 5.07154143258427,
+        "date": "2026-07-23",
+        "fallback": false
+      }
+    },
+    {
+      "shardIndex": 6,
+      "shardCount": 12,
+      "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
+      "generatedAt": "2026-07-23T15:32:58.787Z",
+      "cardsAssigned": 2632,
+      "variantsPriced": 2631,
+      "unmatched": 797,
+      "fx": {
+        "eurBrl": 5.7775,
+        "usdBrl": 5.07154143258427,
+        "date": "2026-07-23",
+        "fallback": false
+      }
+    },
+    {
+      "shardIndex": 7,
+      "shardCount": 12,
+      "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
+      "generatedAt": "2026-07-23T15:33:56.224Z",
+      "cardsAssigned": 2632,
+      "variantsPriced": 2591,
+      "unmatched": 811,
+      "fx": {
+        "eurBrl": 5.7775,
+        "usdBrl": 5.07154143258427,
+        "date": "2026-07-23",
+        "fallback": false
+      }
+    },
+    {
+      "shardIndex": 8,
+      "shardCount": 12,
+      "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
+      "generatedAt": "2026-07-23T15:33:49.534Z",
+      "cardsAssigned": 2632,
+      "variantsPriced": 2646,
+      "unmatched": 780,
+      "fx": {
+        "eurBrl": 5.7775,
+        "usdBrl": 5.07154143258427,
+        "date": "2026-07-23",
+        "fallback": false
+      }
+    },
+    {
+      "shardIndex": 9,
+      "shardCount": 12,
+      "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
+      "generatedAt": "2026-07-23T15:33:20.646Z",
+      "cardsAssigned": 2632,
+      "variantsPriced": 2591,
+      "unmatched": 824,
+      "fx": {
+        "eurBrl": 5.7775,
+        "usdBrl": 5.07154143258427,
+        "date": "2026-07-23",
+        "fallback": false
+      }
+    },
+    {
+      "shardIndex": 10,
+      "shardCount": 12,
+      "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
+      "generatedAt": "2026-07-23T15:33:42.180Z",
+      "cardsAssigned": 2632,
+      "variantsPriced": 2614,
+      "unmatched": 808,
+      "fx": {
+        "eurBrl": 5.7775,
+        "usdBrl": 5.07154143258427,
+        "date": "2026-07-23",
+        "fallback": false
+      }
+    },
+    {
+      "shardIndex": 11,
+      "shardCount": 12,
+      "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
+      "generatedAt": "2026-07-23T15:32:56.355Z",
+      "cardsAssigned": 2632,
+      "variantsPriced": 2570,
+      "unmatched": 827,
+      "fx": {
+        "eurBrl": 5.7775,
+        "usdBrl": 5.07154143258427,
+        "date": "2026-07-23",
+        "fallback": false
+      }
+    }
+  ]
+}
