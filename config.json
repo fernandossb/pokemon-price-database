@@ -1,0 +1,14 @@
+{
+  "languages": ["pt-br", "en"],
+  "currency": "BRL",
+  "maxConcurrency": 6,
+  "requestDelayMs": 150,
+  "weights": {
+    "brMedian": 0.65,
+    "cardmarketTrend": 0.20,
+    "cardmarketAvg30": 0.10,
+    "tcgplayerMarket": 0.05
+  },
+  "minimumConfidence": 35,
+  "outlierTolerance": 0.6
+}
