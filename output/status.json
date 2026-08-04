@@ -1,27 +1,27 @@
 {
   "status": "complete",
-  "generatedAt": "2026-08-03T09:57:22.965Z",
-  "date": "2026-08-03",
+  "generatedAt": "2026-08-04T08:47:32.459Z",
+  "date": "2026-08-04",
   "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
   "cardsInCatalog": 31589,
   "shardsExpected": 12,
   "shardsCompleted": 12,
   "variantsPriced": 31307,
-  "unmatched": 9715,
-  "changedPrices": 16648,
+  "unmatched": 9716,
+  "changedPrices": 25061,
   "workers": [
     {
       "shardIndex": 0,
       "shardCount": 12,
       "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
-      "generatedAt": "2026-08-03T09:56:33.982Z",
+      "generatedAt": "2026-08-04T08:47:09.662Z",
       "cardsAssigned": 2633,
       "variantsPriced": 2631,
       "unmatched": 794,
       "fx": {
-        "eurBrl": 5.8095,
-        "usdBrl": 5.058336961253809,
-        "date": "2026-07-31",
+        "eurBrl": 5.8454,
+        "usdBrl": 5.067533593411357,
+        "date": "2026-08-03",
         "fallback": false
       }
     },
@@ -29,14 +29,14 @@
       "shardIndex": 1,
       "shardCount": 12,
       "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
-      "generatedAt": "2026-08-03T09:56:54.389Z",
+      "generatedAt": "2026-08-04T08:47:07.476Z",
       "cardsAssigned": 2633,
       "variantsPriced": 2568,
       "unmatched": 837,
       "fx": {
-        "eurBrl": 5.8095,
-        "usdBrl": 5.058336961253809,
-        "date": "2026-07-31",
+        "eurBrl": 5.8454,
+        "usdBrl": 5.067533593411357,
+        "date": "2026-08-03",
         "fallback": false
       }
     },
@@ -44,14 +44,14 @@
       "shardIndex": 2,
       "shardCount": 12,
       "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
-      "generatedAt": "2026-08-03T09:56:27.967Z",
+      "generatedAt": "2026-08-04T08:46:23.795Z",
       "cardsAssigned": 2633,
       "variantsPriced": 2619,
       "unmatched": 818,
       "fx": {
-        "eurBrl": 5.8095,
-        "usdBrl": 5.058336961253809,
-        "date": "2026-07-31",
+        "eurBrl": 5.8454,
+        "usdBrl": 5.067533593411357,
+        "date": "2026-08-03",
         "fallback": false
       }
     },
@@ -59,14 +59,14 @@
       "shardIndex": 3,
       "shardCount": 12,
       "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
-      "generatedAt": "2026-08-03T09:56:32.696Z",
+      "generatedAt": "2026-08-04T08:47:01.689Z",
       "cardsAssigned": 2633,
       "variantsPriced": 2598,
       "unmatched": 813,
       "fx": {
-        "eurBrl": 5.8095,
-        "usdBrl": 5.058336961253809,
-        "date": "2026-07-31",
+        "eurBrl": 5.8454,
+        "usdBrl": 5.067533593411357,
+        "date": "2026-08-03",
         "fallback": false
       }
     },
@@ -74,14 +74,14 @@
       "shardIndex": 4,
       "shardCount": 12,
       "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
-      "generatedAt": "2026-08-03T09:56:35.196Z",
+      "generatedAt": "2026-08-04T08:46:41.547Z",
       "cardsAssigned": 2633,
       "variantsPriced": 2644,
-      "unmatched": 792,
+      "unmatched": 793,
       "fx": {
-        "eurBrl": 5.8095,
-        "usdBrl": 5.058336961253809,
-        "date": "2026-07-31",
+        "eurBrl": 5.8454,
+        "usdBrl": 5.067533593411357,
+        "date": "2026-08-03",
         "fallback": false
       }
     },
@@ -89,14 +89,14 @@
       "shardIndex": 5,
       "shardCount": 12,
       "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
-      "generatedAt": "2026-08-03T09:56:16.929Z",
+      "generatedAt": "2026-08-04T08:46:26.405Z",
       "cardsAssigned": 2632,
       "variantsPriced": 2590,
       "unmatched": 816,
       "fx": {
-        "eurBrl": 5.8095,
-        "usdBrl": 5.058336961253809,
-        "date": "2026-07-31",
+        "eurBrl": 5.8454,
+        "usdBrl": 5.067533593411357,
+        "date": "2026-08-03",
         "fallback": false
       }
     },
@@ -104,14 +104,14 @@
       "shardIndex": 6,
       "shardCount": 12,
       "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
-      "generatedAt": "2026-08-03T09:56:18.391Z",
+      "generatedAt": "2026-08-04T08:47:13.302Z",
       "cardsAssigned": 2632,
       "variantsPriced": 2633,
       "unmatched": 798,
       "fx": {
-        "eurBrl": 5.8095,
-        "usdBrl": 5.058336961253809,
-        "date": "2026-07-31",
+        "eurBrl": 5.8454,
+        "usdBrl": 5.067533593411357,
+        "date": "2026-08-03",
         "fallback": false
       }
     },
@@ -119,14 +119,14 @@
       "shardIndex": 7,
       "shardCount": 12,
       "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
-      "generatedAt": "2026-08-03T09:56:48.710Z",
+      "generatedAt": "2026-08-04T08:46:29.709Z",
       "cardsAssigned": 2632,
       "variantsPriced": 2593,
       "unmatched": 810,
       "fx": {
-        "eurBrl": 5.8095,
-        "usdBrl": 5.058336961253809,
-        "date": "2026-07-31",
+        "eurBrl": 5.8454,
+        "usdBrl": 5.067533593411357,
+        "date": "2026-08-03",
         "fallback": false
       }
     },
@@ -134,14 +134,14 @@
       "shardIndex": 8,
       "shardCount": 12,
       "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
-      "generatedAt": "2026-08-03T09:56:57.630Z",
+      "generatedAt": "2026-08-04T08:46:30.745Z",
       "cardsAssigned": 2632,
       "variantsPriced": 2647,
       "unmatched": 781,
       "fx": {
-        "eurBrl": 5.8095,
-        "usdBrl": 5.058336961253809,
-        "date": "2026-07-31",
+        "eurBrl": 5.8454,
+        "usdBrl": 5.067533593411357,
+        "date": "2026-08-03",
         "fallback": false
       }
     },
@@ -149,14 +149,14 @@
       "shardIndex": 9,
       "shardCount": 12,
       "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
-      "generatedAt": "2026-08-03T09:56:18.567Z",
+      "generatedAt": "2026-08-04T08:46:30.155Z",
       "cardsAssigned": 2632,
       "variantsPriced": 2592,
       "unmatched": 823,
       "fx": {
-        "eurBrl": 5.8095,
-        "usdBrl": 5.058336961253809,
-        "date": "2026-07-31",
+        "eurBrl": 5.8454,
+        "usdBrl": 5.067533593411357,
+        "date": "2026-08-03",
         "fallback": false
       }
     },
@@ -164,14 +164,14 @@
       "shardIndex": 10,
       "shardCount": 12,
       "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
-      "generatedAt": "2026-08-03T09:56:14.890Z",
+      "generatedAt": "2026-08-04T08:46:45.826Z",
       "cardsAssigned": 2632,
       "variantsPriced": 2618,
       "unmatched": 806,
       "fx": {
-        "eurBrl": 5.8095,
-        "usdBrl": 5.058336961253809,
-        "date": "2026-07-31",
+        "eurBrl": 5.8454,
+        "usdBrl": 5.067533593411357,
+        "date": "2026-08-03",
         "fallback": false
       }
     },
@@ -179,14 +179,14 @@
       "shardIndex": 11,
       "shardCount": 12,
       "catalogHash": "7e19a35c4806bda39cc263349e453aef99ef4ce82dff1990f0655637031982f5",
-      "generatedAt": "2026-08-03T09:56:13.219Z",
+      "generatedAt": "2026-08-04T08:47:04.505Z",
       "cardsAssigned": 2632,
       "variantsPriced": 2574,
       "unmatched": 827,
       "fx": {
-        "eurBrl": 5.8095,
-        "usdBrl": 5.058336961253809,
-        "date": "2026-07-31",
+        "eurBrl": 5.8454,
+        "usdBrl": 5.067533593411357,
+        "date": "2026-08-03",
         "fallback": false
       }
     }
