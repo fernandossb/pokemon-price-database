@@ -36,7 +36,7 @@ jobs:
   prices:
     needs: catalog
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       max-parallel: 12

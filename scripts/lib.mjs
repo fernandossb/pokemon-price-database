@@ -14,13 +14,6 @@ export async function readJson(path, fallback) {
   }
 }
 
-export const median = values => {
-  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
-  if (!sorted.length) return null;
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-};
-
 export async function getFx() {
   try {
     const response = await fetch('https://api.frankfurter.app/latest?from=EUR&to=BRL,USD');
@@ -35,14 +28,29 @@ export async function getFx() {
   }
 }
 
-export function finishes(card) {
-  const variants = card.variants || {};
+// Enumera as combinações de acabamento (normal/holo/reverse), variação de
+// impressão (unlimited/firstEdition) e carimbo (unstamped/stamped) que
+// realmente existem para a carta, a partir das flags estruturadas do TCGdex.
+export function variants(card) {
+  const v = card.variants || {};
+  const finishes = [];
+  if (v.normal) finishes.push('normal');
+  if (v.holo) finishes.push('holo');
+  if (v.reverse) finishes.push('reverse');
+  if (!finishes.length) finishes.push('normal');
+
+  const printVariations = v.firstEdition ? ['unlimited', 'firstEdition'] : ['unlimited'];
+  const stamps = v.wPromo ? ['unstamped', 'stamped'] : ['unstamped'];
+
   const result = [];
-  if (variants.normal) result.push('normal');
-  if (variants.holo) result.push('holo');
-  if (variants.reverse) result.push('reverse');
-  if (variants.firstEdition) result.push('firstEdition');
-  return result.length ? result : ['normal'];
+  for (const finish of finishes) {
+    for (const printVariation of printVariations) {
+      for (const stamp of stamps) {
+        result.push({ finish, printVariation, stamp });
+      }
+    }
+  }
+  return result;
 }
 
 export function marketValues(card, finish, fx) {
@@ -73,42 +81,30 @@ export function marketValues(card, finish, fx) {
   return values;
 }
 
-function removeOutliers(values, tolerance) {
-  if (values.length < 3) return values;
-  const center = median(values.map(item => item.value));
-  if (!Number.isFinite(center) || center <= 0) return values;
-  return values.filter(item => Math.abs(item.value - center) / center <= tolerance);
+function simpleAverage(values) {
+  if (!values.length) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-export function resolvePrice(card, finish, brSources, fx) {
-  const key = `${card.id}::${finish}`;
-  const brazilian = brSources.get(key) || [];
+// Preço final = média simples de todos os valores de Cardmarket/TCGplayer
+// disponíveis para o acabamento da combinação exata (idioma + variação de
+// impressão + carimbo + acabamento). Nenhum resultado é descartado como
+// "outlier" e nenhuma fonte tem peso maior que outra.
+export function resolvePrice({ card, variant, fx }) {
+  const { finish } = variant;
   const market = marketValues(card, finish, fx);
-  const candidates = [
-    ...brazilian.map(item => ({ source: 'brMedian', value: item.priceBrl, detail: item.source })),
-    ...market
-  ];
-  const filtered = removeOutliers(candidates, config.outlierTolerance);
-  if (!filtered.length) return null;
+  if (!market.length) return null;
 
-  let weighted = 0;
-  let totalWeight = 0;
-  for (const item of filtered) {
-    const weight = config.weights[item.source] ?? 0.03;
-    weighted += item.value * weight;
-    totalWeight += weight;
-  }
-  if (totalWeight <= 0) return null;
+  const price = simpleAverage(market.map(item => item.value));
+  const confidence = Math.min(100, Math.round(15 + market.length * 12));
 
-  const price = weighted / totalWeight;
-  const confidence = Math.min(100, Math.round(25 + filtered.length * 11 + (brazilian.length ? 25 : 0)));
   return {
     priceBrl: round2(price),
     confidence,
-    sources: filtered.map(item => ({
+    sources: market.map(item => ({
       source: item.source,
       valueBrl: round2(item.value),
-      detail: item.detail || null
+      detail: null
     }))
   };
 }

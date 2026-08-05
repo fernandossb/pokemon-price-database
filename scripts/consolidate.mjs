@@ -23,7 +23,9 @@ for (const file of files) {
   if (result.meta.catalogHash !== catalog.hash) throw new Error(`Hash de catálogo divergente em ${file}`);
   shards.push(result.meta);
   Object.assign(merged, result.prices || {});
-  for (const item of result.unmatched || []) unmatchedByKey.set(`${item.id}::${item.finish || ''}`, item);
+  for (const item of result.unmatched || []) {
+    unmatchedByKey.set(`${item.id}::${item.language || ''}::${item.printVariation || ''}::${item.stamp || ''}::${item.finish || ''}`, item);
+  }
   await fs.writeFile(path.join('cache/shards', file), JSON.stringify(result));
 }
 

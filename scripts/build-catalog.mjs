@@ -10,7 +10,7 @@ for (const language of config.languages) {
   console.log(`${language}: ${cards.length} registros`);
   for (const card of cards) {
     const current = cardsById.get(card.id);
-    if (!current) cardsById.set(card.id, { ...card, availableLanguages: [language] });
+    if (!current) cardsById.set(card.id, { id: card.id, localId: card.localId, availableLanguages: [language] });
     else if (!current.availableLanguages.includes(language)) current.availableLanguages.push(language);
   }
 }

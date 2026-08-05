@@ -6,19 +6,6 @@
   "maxAttemptsPerCard": 3,
   "retryDelayMs": 500,
   "maxConcurrentRequestsPerShard": 4,
-  "weights": {
-    "brMedian": 0.65,
-    "cardmarketTrend": 0.2,
-    "cardmarketAvg30": 0.1,
-    "cardmarketAvg7": 0.08,
-    "cardmarketAvg1": 0.06,
-    "cardmarketAverageSell": 0.06,
-    "cardmarketLow": 0.04,
-    "tcgplayerMarket": 0.05,
-    "tcgplayerMid": 0.03,
-    "tcgplayerLow": 0.02
-  },
   "minimumConfidence": 35,
-  "outlierTolerance": 0.6,
   "priceChangeThresholdPercent": 0.1
 }
