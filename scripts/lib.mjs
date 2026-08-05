@@ -28,89 +28,131 @@ export async function getFx() {
   }
 }
 
-// Enumera as combinações de acabamento (normal/holo/reverse), variação de
-// impressão (unlimited/firstEdition) e carimbo (unstamped/stamped) que
-// realmente existem para a carta, a partir das flags estruturadas do TCGdex.
-export function variants(card) {
-  const v = card.variants || {};
-  const finishes = [];
-  if (v.normal) finishes.push('normal');
-  if (v.holo) finishes.push('holo');
-  if (v.reverse) finishes.push('reverse');
-  if (!finishes.length) finishes.push('normal');
+const TCGPLAYER_META_KEYS = new Set(['updated', 'unit']);
+const CARDMARKET_META_KEYS = new Set(['updated', 'unit']);
+const PRICE_FIELDS = ['marketPrice', 'midPrice', 'lowPrice', 'highPrice', 'directLowPrice'];
+const CARDMARKET_NON_FOIL_KEYS = [
+  'trend', 'avg30', 'avg7', 'avg1', 'avg', 'low', 'average-sell-price'
+];
+const CARDMARKET_FOIL_KEYS = [
+  'trend-holo', 'avg30-holo', 'avg7-holo', 'avg1-holo', 'avg-holo', 'low-holo', 'average-sell-price-holo'
+];
 
-  const printVariations = v.firstEdition ? ['unlimited', 'firstEdition'] : ['unlimited'];
-  const stamps = v.wPromo ? ['unstamped', 'stamped'] : ['unstamped'];
-
-  const result = [];
-  for (const finish of finishes) {
-    for (const printVariation of printVariations) {
-      for (const stamp of stamps) {
-        result.push({ finish, printVariation, stamp });
-      }
-    }
-  }
-  return result;
+function exactEnum(value) {
+  return String(value ?? '').trim();
 }
 
-export function marketValues(card, variant, fx) {
-  const { finish, printVariation, stamp } = variant;
-  const cardmarket = card.pricing?.cardmarket || {};
-  const tcgplayer = card.pricing?.tcgplayer || {};
-  const foil = ['holo', 'reverse'].includes(finish);
+function hasPositiveNumber(value) {
+  return Number.isFinite(Number(value)) && Number(value) > 0;
+}
+
+function hasPriceObject(value) {
+  return Boolean(value && typeof value === 'object' && PRICE_FIELDS.some(field => hasPositiveNumber(value[field])));
+}
+
+function hasAnyCardmarketPrice(cardmarket, keys) {
+  return keys.some(key => hasPositiveNumber(cardmarket?.[key]));
+}
+
+function addCatalogEnum(map, value, source, priced = false, kind = 'variant') {
+  const exact = exactEnum(value);
+  if (!exact) return;
+  const current = map.get(exact) || { value: exact, sources: [], priced: false, kinds: [] };
+  if (source && !current.sources.includes(source)) current.sources.push(source);
+  if (kind && !current.kinds.includes(kind)) current.kinds.push(kind);
+  current.priced = current.priced || Boolean(priced);
+  map.set(exact, current);
+}
+
+/**
+ * Returns every exact enum exposed for this card by TCGdex, TCGplayer or
+ * Cardmarket. No allowlist is used: a future enum is preserved automatically.
+ */
+export function variantCatalog(card) {
+  const found = new Map();
+  const tcgdexVariants = card?.variants && typeof card.variants === 'object' ? card.variants : {};
+  for (const [key, value] of Object.entries(tcgdexVariants)) {
+    if (value === true || (value != null && value !== false && value !== '')) {
+      addCatalogEnum(found, key, 'tcgdex', false, 'tcgdex-flag');
+    }
+  }
+
+  const tcgplayer = card?.pricing?.tcgplayer && typeof card.pricing.tcgplayer === 'object'
+    ? card.pricing.tcgplayer
+    : {};
+  for (const [key, value] of Object.entries(tcgplayer)) {
+    if (TCGPLAYER_META_KEYS.has(key) || !value || typeof value !== 'object') continue;
+    addCatalogEnum(found, key, 'tcgplayer', hasPriceObject(value), 'market-variant');
+  }
+
+  const cardmarket = card?.pricing?.cardmarket && typeof card.pricing.cardmarket === 'object'
+    ? card.pricing.cardmarket
+    : {};
+  const hasNonFoil = hasAnyCardmarketPrice(cardmarket, CARDMARKET_NON_FOIL_KEYS);
+  const hasFoil = hasAnyCardmarketPrice(cardmarket, CARDMARKET_FOIL_KEYS);
+  if (hasNonFoil) addCatalogEnum(found, 'normal', 'cardmarket', true, 'market-variant');
+  if (hasFoil) addCatalogEnum(found, 'holo', 'cardmarket', true, 'market-variant');
+
+  // Preserve any future Cardmarket enum-like nested object instead of dropping it.
+  for (const [key, value] of Object.entries(cardmarket)) {
+    if (CARDMARKET_META_KEYS.has(key) || !value || typeof value !== 'object') continue;
+    addCatalogEnum(found, key, 'cardmarket', hasPriceObject(value), 'market-variant');
+  }
+
+  return [...found.values()]
+    .map(item => ({
+      value: item.value,
+      sources: item.sources.sort(),
+      priced: Boolean(item.priced),
+      kinds: item.kinds.sort(),
+    }))
+    .sort((a, b) => a.value.localeCompare(b.value, 'en'));
+}
+
+function pushConverted(values, source, rawValue, rate) {
+  const value = Number(rawValue);
+  if (Number.isFinite(value) && value > 0) values.push({ source, value: value * rate });
+}
+
+function addCardmarketValues(values, cardmarket, keys, fx, enumValue) {
+  for (const key of keys) pushConverted(values, `cardmarket:${enumValue}:${key}`, cardmarket?.[key], fx.eurBrl);
+}
+
+/**
+ * Reads prices only from the exact enum selected. The only shared values are
+ * Cardmarket's explicit normal/holo buckets when the exact enum is normal or
+ * holo. No alias, translated name or legacy value is accepted.
+ */
+export function marketValues(card, variantEnum, fx) {
+  const exact = exactEnum(variantEnum);
+  if (!exact) return { values: [], sourceEnums: [] };
+
   const values = [];
-  const estimatedDimensions = [];
-
-  const pushEur = (source, value) => {
-    if (Number.isFinite(value) && value > 0) values.push({ source, value: value * fx.eurBrl });
-  };
-  const pushUsd = (source, value) => {
-    if (Number.isFinite(value) && value > 0) values.push({ source, value: value * fx.usdBrl });
-  };
-
-  // O Cardmarket exposto pelo TCGdex separa foil/não foil, mas não separa
-  // explicitamente 1ª edição. Para não misturar versões, ele só participa da
-  // combinação unlimited. A 1ª edição exige uma chave própria do TCGplayer.
-  if (printVariation === 'unlimited') {
-    pushEur('cardmarketTrend', foil ? cardmarket['trend-holo'] : cardmarket.trend);
-    pushEur('cardmarketAvg30', foil ? cardmarket['avg30-holo'] : cardmarket.avg30);
-    pushEur('cardmarketAvg7', foil ? cardmarket['avg7-holo'] : cardmarket.avg7);
-    pushEur('cardmarketAvg1', foil ? cardmarket['avg1-holo'] : cardmarket.avg1);
-    pushEur('cardmarketAverageSell', foil ? cardmarket['average-sell-price-holo'] : cardmarket['average-sell-price']);
-    pushEur('cardmarketLow', foil ? cardmarket['low-holo'] : cardmarket.low);
+  const sourceEnums = [];
+  const tcgplayer = card?.pricing?.tcgplayer && typeof card.pricing.tcgplayer === 'object'
+    ? card.pricing.tcgplayer
+    : {};
+  const tcg = tcgplayer[exact];
+  if (tcg && typeof tcg === 'object') {
+    sourceEnums.push({ provider: 'tcgplayer', value: exact });
+    for (const field of PRICE_FIELDS) pushConverted(values, `tcgplayer:${exact}:${field}`, tcg[field], fx.usdBrl);
   }
 
-  let tcgCandidates = [];
-  if (printVariation === 'firstEdition') {
-    if (finish === 'normal') tcgCandidates = ['1st-edition'];
-    else if (finish === 'holo') tcgCandidates = ['1st-edition-holofoil'];
-    else tcgCandidates = ['1st-edition-reverse-holofoil'];
-  } else if (finish === 'reverse') {
-    tcgCandidates = ['reverse-holofoil', 'reverse', 'reverseHolofoil'];
-  } else if (finish === 'holo') {
-    tcgCandidates = ['unlimited-holofoil', 'holofoil', 'holo'];
-  } else {
-    tcgCandidates = ['unlimited', 'normal'];
+  const cardmarket = card?.pricing?.cardmarket && typeof card.pricing.cardmarket === 'object'
+    ? card.pricing.cardmarket
+    : {};
+  if (exact === 'normal') {
+    sourceEnums.push({ provider: 'cardmarket', value: exact });
+    addCardmarketValues(values, cardmarket, CARDMARKET_NON_FOIL_KEYS, fx, exact);
+  } else if (exact === 'holo') {
+    sourceEnums.push({ provider: 'cardmarket', value: exact });
+    addCardmarketValues(values, cardmarket, CARDMARKET_FOIL_KEYS, fx, exact);
+  } else if (cardmarket[exact] && typeof cardmarket[exact] === 'object') {
+    sourceEnums.push({ provider: 'cardmarket', value: exact });
+    for (const field of PRICE_FIELDS) pushConverted(values, `cardmarket:${exact}:${field}`, cardmarket[exact][field], fx.eurBrl);
   }
 
-  const tcgKey = tcgCandidates.find(key => tcgplayer[key] && typeof tcgplayer[key] === 'object');
-  const tcg = tcgKey ? tcgplayer[tcgKey] : null;
-  pushUsd(tcgKey ? `tcgplayerMarket:${tcgKey}` : 'tcgplayerMarket', tcg?.marketPrice);
-  pushUsd(tcgKey ? `tcgplayerMid:${tcgKey}` : 'tcgplayerMid', tcg?.midPrice);
-  pushUsd(tcgKey ? `tcgplayerLow:${tcgKey}` : 'tcgplayerLow', tcg?.lowPrice);
-
-  // TCGdex informa que a carta possui versão com carimbo promocional, mas os
-  // campos de preço públicos não identificam o carimbo em cada valor. Mantemos
-  // uma estimativa separada, porém com confiança limitada para o app exigir
-  // confirmação em vez de misturar silenciosamente as versões.
-  if (stamp === 'stamped') estimatedDimensions.push('stamp');
-
-  return {
-    values,
-    matchLevel: estimatedDimensions.length ? 'estimated' : 'exact',
-    estimatedDimensions,
-    tcgKey: tcgKey || null,
-  };
+  return { values, sourceEnums };
 }
 
 function simpleAverage(values) {
@@ -118,28 +160,20 @@ function simpleAverage(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-// Preço final = média simples de todos os valores de Cardmarket/TCGplayer
-// disponíveis para o acabamento da combinação exata (idioma + variação de
-// impressão + carimbo + acabamento). Nenhum resultado é descartado como
-// "outlier" e nenhuma fonte tem peso maior que outra.
-export function resolvePrice({ card, variant, fx }) {
-  const market = marketValues(card, variant, fx);
+export function resolvePrice({ card, variantEnum, fx }) {
+  const market = marketValues(card, variantEnum, fx);
   if (!market.values.length) return null;
-
   const price = simpleAverage(market.values.map(item => item.value));
-  let confidence = Math.min(100, Math.round(15 + market.values.length * 12));
-  if (market.matchLevel === 'estimated') confidence = Math.min(34, confidence);
-
   return {
     priceBrl: round2(price),
-    confidence,
-    matchLevel: market.matchLevel,
-    estimatedDimensions: market.estimatedDimensions,
-    pricingVariantKey: market.tcgKey,
+    confidence: Math.min(100, Math.round(20 + market.values.length * 12)),
+    matchLevel: 'exact',
+    estimatedDimensions: [],
+    sourceEnums: market.sourceEnums,
     sources: market.values.map(item => ({
       source: item.source,
       valueBrl: round2(item.value),
-      detail: null
-    }))
+      detail: null,
+    })),
   };
 }

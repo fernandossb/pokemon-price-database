@@ -1,69 +1,50 @@
-# Pokémon Price Database Brasil v0.5
+# Pokémon Price Database Brasil v0.7
 
-Central externa de preços do POKECARD Brasil.
+Central externa de preços usada pelo POKECARD Brasil.
 
-## Como funciona
+## Enums dinâmicos por carta
 
-1. Um job gera o catálogo consolidado em português, inglês e japonês.
-2. O catálogo é dividido de forma determinística em 12 lotes.
-3. Doze trabalhadores processam os lotes em paralelo.
-4. Cada carta é consultada em todos os idiomas disponíveis.
-5. Um job final consolida os resultados, preserva preços anteriores em falhas temporárias e publica o banco atual.
-6. Um arquivo diário registra somente os preços alterados.
+O banco não usa uma lista fechada de variantes. Para cada carta e idioma, ele preserva exatamente todos os valores encontrados em:
 
-## Chave das variações
+- `card.variants` do TCGdex;
+- chaves de `card.pricing.tcgplayer`;
+- variantes identificáveis no bloco `card.pricing.cardmarket`.
 
-Cada registro usa a chave:
+Qualquer enum novo publicado futuramente entra automaticamente no catálogo da carta. Ele não é descartado, traduzido ou convertido para um nome antigo.
 
-`cardId::language::printVariation::stamp::finish`
+## Chave exata de preço
 
-Exemplo:
+Cada preço usa:
 
-`base1-4::en::firstEdition::unstamped::holo`
+`cardId::language::variantEnum`
 
-Dimensões:
+Exemplos:
 
-- idioma: `pt-br`, `en` ou `ja`;
-- edição: `unlimited` ou `firstEdition`;
-- carimbo: `unstamped` ou `stamped`;
-- acabamento: `normal`, `holo` ou `reverse`.
+- `sv03.5-001::pt-br::reverse-holofoil`
+- `base1-4::en::1st-edition-holofoil`
+- `set-x-10::en::future-galaxy-foil`
 
-## Proteção contra mistura de versões
+A string de `variantEnum` é sensível à nomenclatura. `reverse-holofoil` não é igual a `Reverse Holofoil`, `reversa` ou qualquer alias.
 
-A versão 0.5 não reutiliza automaticamente o preço unlimited para 1ª edição. A 1ª edição só recebe preço quando o TCGplayer expõe uma chave própria, como `1st-edition` ou `1st-edition-holofoil`.
+## Catálogo mesmo sem preço
 
-O TCGdex informa a existência de uma versão com carimbo promocional, mas os campos públicos de preço nem sempre identificam o carimbo em cada valor. Nesses casos o banco mantém o registro separado com:
+Cada shard publica também `variantCatalog`. Assim, um enum confirmado pelas fontes continua aparecendo no cadastro do aplicativo mesmo quando ainda não existe valor exato para ele. Nessa situação, `priced` fica como `false` e nenhum preço de outra variante é reutilizado.
 
-- `matchLevel: "estimated"`;
-- `estimatedDimensions: ["stamp"]`;
-- confiança limitada a no máximo 34%.
+## Fontes e cálculo
 
-O POKECARD Brasil mostra esse preço para revisão, mas não o inclui automaticamente no valor da coleção.
-
-## Metodologia de preço
-
-Para uma combinação suportada, o preço é a média aritmética simples dos valores públicos disponíveis:
-
-- Cardmarket: tendência, médias de 30, 7 e 1 dia, preço médio de venda e menor oferta;
-- TCGplayer: market, mid e low;
-- conversão de EUR/USD para BRL pelo Frankfurter.
-
-Cardmarket só participa da edição unlimited, pois os campos expostos não separam 1ª edição. Nenhum outlier é removido e nenhuma fonte recebe peso maior.
+- TCGplayer: para uma variante, somente o objeto cuja chave seja exatamente igual ao `variantEnum`.
+- Cardmarket: os grupos explícitos `normal` e `holo`, além de futuros objetos de variante caso sejam publicados.
+- Conversão de EUR e USD para BRL pelo Frankfurter.
+- Média aritmética simples dos valores positivos disponíveis para o enum exato.
 
 ## Arquivos publicados
 
-- `output/prices-current.json`: banco atual para o aplicativo;
-- `output/status.json`: status e versão do esquema;
-- `output/unmatched-cards.json`: cartas/variações sem preço estruturado;
-- `history/YYYY-MM-DD-changes.json`: mudanças do dia;
-- `cache/shards/`: último resultado dos trabalhadores.
+- `output/status.json`: schema 4, formato `sharded-v2`;
+- `output/card-shard-index.json`: formato `card-shard-index-v2`;
+- `output/shards/shard-00.json` até `shard-11.json`: formato `price-shard-v2`, com `prices` e `variantCatalog`;
+- `output/unmatched-cards.json`: enums encontrados sem preço exato;
+- `history/YYYY-MM-DD-changes.json`: alterações de preço.
 
-O esquema atual é `schemaVersion: 2`.
+## Publicação
 
-## Agendamento
-
-A atualização automática roda todos os dias às 03:00 no horário de Brasília. Também pode ser iniciada manualmente em **Actions → Atualizar tabela de preços em paralelo → Run workflow**.
-
-## Permissão necessária
-
-No GitHub, abra **Settings → Actions → General → Workflow permissions** e marque **Read and write permissions**.
+A atualização automática roda diariamente às 03:00 no horário de Brasília e também pode ser iniciada em **Actions → Atualizar tabela de preços em paralelo → Run workflow**.
