@@ -25,6 +25,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Testar separação das variações
+        run: npm test
       - name: Gerar catálogo consolidado
         run: npm run catalog
       - uses: actions/upload-artifact@v4

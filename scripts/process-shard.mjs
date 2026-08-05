@@ -14,7 +14,8 @@ if (!catalog?.cards?.length) throw new Error('work/catalog.json ausente ou vazio
 const cards = catalog.cards.filter((_, index) => index % shardCount === shardIndex);
 const fx = await getFx();
 
-const previousShard = await readJson(`cache/shards/shard-${shardTag}.json`, { prices: {} });
+const previousShardRaw = await readJson(`cache/shards/shard-${shardTag}.json`, { prices: {} });
+const previousShard = Number(previousShardRaw?.meta?.schemaVersion) === 2 ? previousShardRaw : { prices: {} };
 const prices = previousShard.prices || {};
 const unmatched = [];
 let cursor = 0;
@@ -97,6 +98,7 @@ await Promise.all(Array.from({ length: concurrency }, () => worker()));
 await fs.mkdir('work/shards', { recursive: true });
 const result = {
   meta: {
+    schemaVersion: 2,
     shardIndex,
     shardCount,
     catalogHash: catalog.hash,

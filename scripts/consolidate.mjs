@@ -7,7 +7,8 @@ await fs.mkdir('cache/shards', { recursive: true });
 await fs.mkdir('history', { recursive: true });
 const catalog = await readJson('work/catalog.json', null);
 if (!catalog?.cards?.length) throw new Error('Catálogo ausente');
-const previous = await readJson('output/prices-current.json', { prices: {}, meta: {} });
+const previousRaw = await readJson('output/prices-current.json', { prices: {}, meta: {} });
+const previous = Number(previousRaw?.meta?.schemaVersion) === 2 ? previousRaw : { prices: {}, meta: {} };
 const previousPrices = previous.prices || {};
 const merged = { ...previousPrices };
 const unmatchedByKey = new Map();
@@ -50,6 +51,7 @@ const generatedAt = nowIso();
 const unmatched = [...unmatchedByKey.values()];
 const completeShards = new Set(shards.map(s => s.shardIndex));
 const meta = {
+  schemaVersion: 2,
   status: completeShards.size === (config.shardCount || 12) ? 'complete' : 'partial',
   generatedAt,
   date: todayUtc(),

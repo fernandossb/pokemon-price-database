@@ -53,12 +53,13 @@ export function variants(card) {
   return result;
 }
 
-export function marketValues(card, finish, fx) {
+export function marketValues(card, variant, fx) {
+  const { finish, printVariation, stamp } = variant;
   const cardmarket = card.pricing?.cardmarket || {};
   const tcgplayer = card.pricing?.tcgplayer || {};
-  const foil = ['holo', 'reverse', 'firstEditionHolo'].includes(finish);
-  const tcgKey = finish === 'reverse' ? 'reverse-holofoil' : foil ? 'holofoil' : 'normal';
+  const foil = ['holo', 'reverse'].includes(finish);
   const values = [];
+  const estimatedDimensions = [];
 
   const pushEur = (source, value) => {
     if (Number.isFinite(value) && value > 0) values.push({ source, value: value * fx.eurBrl });
@@ -67,18 +68,49 @@ export function marketValues(card, finish, fx) {
     if (Number.isFinite(value) && value > 0) values.push({ source, value: value * fx.usdBrl });
   };
 
-  pushEur('cardmarketTrend', foil ? cardmarket['trend-holo'] : cardmarket.trend);
-  pushEur('cardmarketAvg30', foil ? cardmarket['avg30-holo'] : cardmarket.avg30);
-  pushEur('cardmarketAvg7', foil ? cardmarket['avg7-holo'] : cardmarket.avg7);
-  pushEur('cardmarketAvg1', foil ? cardmarket['avg1-holo'] : cardmarket.avg1);
-  pushEur('cardmarketAverageSell', foil ? cardmarket['average-sell-price-holo'] : cardmarket['average-sell-price']);
-  pushEur('cardmarketLow', foil ? cardmarket['low-holo'] : cardmarket.low);
+  // O Cardmarket exposto pelo TCGdex separa foil/não foil, mas não separa
+  // explicitamente 1ª edição. Para não misturar versões, ele só participa da
+  // combinação unlimited. A 1ª edição exige uma chave própria do TCGplayer.
+  if (printVariation === 'unlimited') {
+    pushEur('cardmarketTrend', foil ? cardmarket['trend-holo'] : cardmarket.trend);
+    pushEur('cardmarketAvg30', foil ? cardmarket['avg30-holo'] : cardmarket.avg30);
+    pushEur('cardmarketAvg7', foil ? cardmarket['avg7-holo'] : cardmarket.avg7);
+    pushEur('cardmarketAvg1', foil ? cardmarket['avg1-holo'] : cardmarket.avg1);
+    pushEur('cardmarketAverageSell', foil ? cardmarket['average-sell-price-holo'] : cardmarket['average-sell-price']);
+    pushEur('cardmarketLow', foil ? cardmarket['low-holo'] : cardmarket.low);
+  }
 
-  const tcg = tcgplayer[tcgKey] || tcgplayer[finish] || null;
-  pushUsd('tcgplayerMarket', tcg?.marketPrice);
-  pushUsd('tcgplayerMid', tcg?.midPrice);
-  pushUsd('tcgplayerLow', tcg?.lowPrice);
-  return values;
+  let tcgCandidates = [];
+  if (printVariation === 'firstEdition') {
+    if (finish === 'normal') tcgCandidates = ['1st-edition'];
+    else if (finish === 'holo') tcgCandidates = ['1st-edition-holofoil'];
+    else tcgCandidates = ['1st-edition-reverse-holofoil'];
+  } else if (finish === 'reverse') {
+    tcgCandidates = ['reverse-holofoil', 'reverse', 'reverseHolofoil'];
+  } else if (finish === 'holo') {
+    tcgCandidates = ['unlimited-holofoil', 'holofoil', 'holo'];
+  } else {
+    tcgCandidates = ['unlimited', 'normal'];
+  }
+
+  const tcgKey = tcgCandidates.find(key => tcgplayer[key] && typeof tcgplayer[key] === 'object');
+  const tcg = tcgKey ? tcgplayer[tcgKey] : null;
+  pushUsd(tcgKey ? `tcgplayerMarket:${tcgKey}` : 'tcgplayerMarket', tcg?.marketPrice);
+  pushUsd(tcgKey ? `tcgplayerMid:${tcgKey}` : 'tcgplayerMid', tcg?.midPrice);
+  pushUsd(tcgKey ? `tcgplayerLow:${tcgKey}` : 'tcgplayerLow', tcg?.lowPrice);
+
+  // TCGdex informa que a carta possui versão com carimbo promocional, mas os
+  // campos de preço públicos não identificam o carimbo em cada valor. Mantemos
+  // uma estimativa separada, porém com confiança limitada para o app exigir
+  // confirmação em vez de misturar silenciosamente as versões.
+  if (stamp === 'stamped') estimatedDimensions.push('stamp');
+
+  return {
+    values,
+    matchLevel: estimatedDimensions.length ? 'estimated' : 'exact',
+    estimatedDimensions,
+    tcgKey: tcgKey || null,
+  };
 }
 
 function simpleAverage(values) {
@@ -91,17 +123,20 @@ function simpleAverage(values) {
 // impressão + carimbo + acabamento). Nenhum resultado é descartado como
 // "outlier" e nenhuma fonte tem peso maior que outra.
 export function resolvePrice({ card, variant, fx }) {
-  const { finish } = variant;
-  const market = marketValues(card, finish, fx);
-  if (!market.length) return null;
+  const market = marketValues(card, variant, fx);
+  if (!market.values.length) return null;
 
-  const price = simpleAverage(market.map(item => item.value));
-  const confidence = Math.min(100, Math.round(15 + market.length * 12));
+  const price = simpleAverage(market.values.map(item => item.value));
+  let confidence = Math.min(100, Math.round(15 + market.values.length * 12));
+  if (market.matchLevel === 'estimated') confidence = Math.min(34, confidence);
 
   return {
     priceBrl: round2(price),
     confidence,
-    sources: market.map(item => ({
+    matchLevel: market.matchLevel,
+    estimatedDimensions: market.estimatedDimensions,
+    pricingVariantKey: market.tcgKey,
+    sources: market.values.map(item => ({
       source: item.source,
       valueBrl: round2(item.value),
       detail: null
