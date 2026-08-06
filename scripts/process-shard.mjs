@@ -95,8 +95,13 @@ async function processOne(summary) {
         enumKinds: enumInfo.kinds,
         name: card.name,
         number: card.localId,
+        // Total impresso na carta ("015/094" usa o oficial, não o total com
+        // secretas). Ambos são publicados para a identificação exata no app.
+        setTotal: card.set?.cardCount?.official ?? null,
+        setTotalWithSecrets: card.set?.cardCount?.total ?? null,
         setId: card.set?.id || null,
         setName: card.set?.name || null,
+        rarity: card.rarity || null,
         illustrator: card.illustrator || null,
         promotional: Boolean(card.set?.id?.toLowerCase().includes('promo')),
         updatedAt: nowIso(),

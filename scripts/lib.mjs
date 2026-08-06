@@ -30,7 +30,14 @@ export async function getFx() {
 
 const TCGPLAYER_META_KEYS = new Set(['updated', 'unit']);
 const CARDMARKET_META_KEYS = new Set(['updated', 'unit']);
+// Campos que provam a EXISTÊNCIA de preço para a variante (descoberta de enum).
 const PRICE_FIELDS = ['marketPrice', 'midPrice', 'lowPrice', 'highPrice', 'directLowPrice'];
+// Campos usados para CALCULAR o valor. `highPrice` fica de fora: ele não é um
+// preço de mercado, é o teto do anúncio mais caro da listagem — tipicamente uma
+// carta graduada, um lote ou um erro de digitação. Num comum de US$ 0,08 o
+// TCGplayer chega a publicar highPrice US$ 999, o que sozinho destruiria a
+// média (Darumaka me02-015 saía a R$ 464,75 em vez de ~R$ 0,21).
+const VALUATION_FIELDS = ['marketPrice', 'midPrice', 'lowPrice', 'directLowPrice'];
 const CARDMARKET_NON_FOIL_KEYS = [
   'trend', 'avg30', 'avg7', 'avg1', 'avg', 'low', 'average-sell-price'
 ];
@@ -135,7 +142,7 @@ export function marketValues(card, variantEnum, fx) {
   const tcg = tcgplayer[exact];
   if (tcg && typeof tcg === 'object') {
     sourceEnums.push({ provider: 'tcgplayer', value: exact });
-    for (const field of PRICE_FIELDS) pushConverted(values, `tcgplayer:${exact}:${field}`, tcg[field], fx.usdBrl);
+    for (const field of VALUATION_FIELDS) pushConverted(values, `tcgplayer:${exact}:${field}`, tcg[field], fx.usdBrl);
   }
 
   const cardmarket = card?.pricing?.cardmarket && typeof card.pricing.cardmarket === 'object'
@@ -149,7 +156,7 @@ export function marketValues(card, variantEnum, fx) {
     addCardmarketValues(values, cardmarket, CARDMARKET_FOIL_KEYS, fx, exact);
   } else if (cardmarket[exact] && typeof cardmarket[exact] === 'object') {
     sourceEnums.push({ provider: 'cardmarket', value: exact });
-    for (const field of PRICE_FIELDS) pushConverted(values, `cardmarket:${exact}:${field}`, cardmarket[exact][field], fx.eurBrl);
+    for (const field of VALUATION_FIELDS) pushConverted(values, `cardmarket:${exact}:${field}`, cardmarket[exact][field], fx.eurBrl);
   }
 
   return { values, sourceEnums };
