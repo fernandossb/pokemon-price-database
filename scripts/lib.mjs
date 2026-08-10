@@ -167,19 +167,54 @@ function simpleAverage(values) {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+// Ordem de preferência dos mercados. O preço publicado vem de UM mercado só —
+// o primeiro desta lista que tenha valor para a variante —, não de uma média
+// entre os três. Misturar TCGplayer (dólar, mercado americano) com Cardmarket
+// (euro, mercado europeu) produz um número que não corresponde a lugar nenhum.
+// TCGdex não tem preço próprio: ele republica os outros dois.
+const SOURCE_PRIORITY = ['tcgplayer', 'tcgdex', 'cardmarket'];
+
+function providerOf(sourceId) {
+  return String(sourceId || '').split(':')[0];
+}
+
+function pickPriorityMarket(values) {
+  const byProvider = new Map();
+  for (const item of values) {
+    const provider = providerOf(item.source);
+    if (!byProvider.has(provider)) byProvider.set(provider, []);
+    byProvider.get(provider).push(item);
+  }
+  for (const provider of SOURCE_PRIORITY) {
+    const chosen = byProvider.get(provider);
+    if (chosen?.length) return { provider, values: chosen };
+  }
+  // Mercado novo, ainda fora da lista: melhor usar do que descartar o preço.
+  for (const [provider, chosen] of byProvider) {
+    if (chosen.length) return { provider, values: chosen };
+  }
+  return { provider: '', values: [] };
+}
+
 export function resolvePrice({ card, variantEnum, fx }) {
   const market = marketValues(card, variantEnum, fx);
   if (!market.values.length) return null;
-  const price = simpleAverage(market.values.map(item => item.value));
+  const chosen = pickPriorityMarket(market.values);
+  if (!chosen.values.length) return null;
+  const price = simpleAverage(chosen.values.map(item => item.value));
   return {
     priceBrl: round2(price),
-    confidence: Math.min(100, Math.round(20 + market.values.length * 12)),
+    confidence: Math.min(100, Math.round(20 + chosen.values.length * 12)),
     matchLevel: 'exact',
     estimatedDimensions: [],
+    priceMarket: chosen.provider,
     sourceEnums: market.sourceEnums,
+    // Guardamos TODAS as referências lidas, marcando quais entraram na conta.
+    // Assim o app consegue mostrar o mercado usado e os demais como contexto.
     sources: market.values.map(item => ({
       source: item.source,
       valueBrl: round2(item.value),
+      used: providerOf(item.source) === chosen.provider,
       detail: null,
     })),
   };
