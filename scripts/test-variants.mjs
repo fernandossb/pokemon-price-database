@@ -41,4 +41,29 @@ assert.equal(resolvePrice({ card, variantEnum: 'Galaxy Foil Future', fx }), null
 assert.equal(resolvePrice({ card, variantEnum: 'reversa', fx }), null, 'Alias antigo não deve localizar preço');
 assert(marketValues(card, '1st-edition-holofoil', fx).values.every(item => item.source.includes('1st-edition-holofoil')));
 
-console.log('Enums dinâmicos aprovados: nenhum valor da fonte é descartado e a busca usa a string exata.');
+// --- Prioridade de mercado: TCGplayer, depois TCGdex, depois Cardmarket ---
+
+// A variante "normal" tem preço nos dois mercados. Só o TCGplayer entra na
+// conta: 2, 2.5 e 1.5 dólares a 5 reais = média de 10.
+const normal = resolvePrice({ card, variantEnum: 'normal', fx });
+assert.equal(normal.priceMarket, 'tcgplayer', 'TCGplayer tem prioridade sobre o Cardmarket');
+assert.equal(normal.priceBrl, 10, 'A média não pode misturar os dois mercados');
+assert(
+  normal.sources.some(item => item.source.startsWith('cardmarket:') && item.used === false),
+  'O Cardmarket continua registrado como referência, marcado como não usado'
+);
+assert(
+  normal.sources.filter(item => item.used).every(item => item.source.startsWith('tcgplayer:')),
+  'Só valores do mercado escolhido podem entrar na conta'
+);
+
+// Sem TCGplayer para a variante, o Cardmarket assume: 3 e 3 euros a 6 reais.
+const soCardmarket = resolvePrice({
+  card: { pricing: { cardmarket: { trend: 3, avg30: 3 } } },
+  variantEnum: 'normal',
+  fx,
+});
+assert.equal(soCardmarket.priceMarket, 'cardmarket', 'Sem TCGplayer, usa o Cardmarket');
+assert.equal(soCardmarket.priceBrl, 18);
+
+console.log('Enums dinâmicos e prioridade de mercado aprovados: nenhum valor da fonte é descartado e a busca usa a string exata.');
