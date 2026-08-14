@@ -1,0 +1,49 @@
+name: Atualizar regras de deck
+
+# Roda sozinho todo dia e pode ser disparado à mão.
+#
+# É um serviço separado do de preços de propósito: são minutos e falhas
+# independentes. Se a fonte de legalidade sair do ar, os preços continuam
+# saindo normalmente — e vice-versa.
+on:
+  workflow_dispatch:
+  schedule:
+    # 07:00 UTC = 04:00 no horário de Brasília, uma hora depois dos preços.
+    - cron: '0 7 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pokemon-deck-rules
+  cancel-in-progress: false
+
+jobs:
+  regras:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Buscar legalidade e gerar o arquivo
+        run: npm run deck-rules
+
+      - name: Conferir o que saiu
+        run: |
+          node -e "
+            const r = require('./output/deck-rules.json');
+            if (!r.padrao || r.padrao.length < 10) { console.error('Poucos ids no Padrão'); process.exit(1); }
+            console.log(r.padrao.length + ' ids no Padrão, ' + r.expandido.length + ' no Expandido');
+            console.log('Gerado em ' + r.geradoEm);
+          "
+
+      - name: Publicar
+        run: |
+          git config user.name "pokemon-price-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add output/deck-rules.json
+          git diff --cached --quiet || git commit -m "Atualizar regras de deck $(date -u +%F)"
+          git push

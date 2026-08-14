@@ -8,6 +8,7 @@
     "shard": "node scripts/process-shard.mjs",
     "consolidate": "node scripts/consolidate.mjs",
     "validate": "node scripts/validate-output.mjs",
+    "deck-rules": "node scripts/build-deck-rules.mjs",
     "test": "node scripts/test-variants.mjs"
   },
   "engines": {
