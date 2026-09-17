@@ -1,6 +1,6 @@
 {
   "formato": "pokecard-deck-rules-v1",
-  "geradoEm": "2026-09-16T12:21:36.814Z",
+  "geradoEm": "2026-09-17T12:22:09.619Z",
   "fonte": "pokemontcg.io (projeto da comunidade)",
   "aviso": "Legalidade estimada a partir de uma fonte da comunidade, não do regulamento oficial. Confirme no site oficial antes de um campeonato.",
   "construcao": {
@@ -10,7 +10,7 @@
     "minimumRealEnergy": 8,
     "maximumPrimaryEnergyTypes": 2
   },
-  "colecaoMaisNovaDoPadrao": "2026-07-17",
+  "colecaoMaisNovaDoPadrao": "2026-09-16",
   "padrao": [
     "fut20",
     "mcd22",
@@ -27,6 +27,8 @@
     "me3",
     "me4",
     "me5",
+    "me55",
+    "me55c",
     "pgo",
     "rsv10.5",
     "rsv10pt5",
@@ -136,6 +138,8 @@
     "me3",
     "me4",
     "me5",
+    "me55",
+    "me55c",
     "pgo",
     "rsv10.5",
     "rsv10pt5",
