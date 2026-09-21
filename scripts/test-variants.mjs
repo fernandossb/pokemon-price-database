@@ -66,4 +66,19 @@ const soCardmarket = resolvePrice({
 assert.equal(soCardmarket.priceMarket, 'cardmarket', 'Sem TCGplayer, usa o Cardmarket');
 assert.equal(soCardmarket.priceBrl, 18);
 
-console.log('Enums dinâmicos e prioridade de mercado aprovados: nenhum valor da fonte é descartado e a busca usa a string exata.');
+// --- Preço nacional (Liga Pokémon) tem prioridade e não sofre câmbio ---
+
+const comLiga = resolvePrice({ card, variantEnum: 'normal', fx, ligaPrice: { min: 12.5, avg: 15, max: 20 } });
+assert.equal(comLiga.priceMarket, 'ligapokemon', 'Preço nacional tem prioridade sobre TCGplayer e Cardmarket');
+assert.equal(comLiga.priceBrl, 12.5, 'Usa o menor preço de venda direto em reais, sem multiplicar por câmbio');
+assert(
+  comLiga.sources.some(item => item.source.startsWith('tcgplayer:') && item.used === false),
+  'TCGplayer continua registrado como referência, marcado como não usado'
+);
+
+// Sem ligaPrice (caso normal, carta com mais de uma variante), comportamento
+// não muda: continua caindo para TCGplayer exatamente como antes desta fonte existir.
+const semLiga = resolvePrice({ card, variantEnum: 'normal', fx, ligaPrice: null });
+assert.equal(semLiga.priceMarket, 'tcgplayer', 'Sem preço nacional, mercado internacional decide como antes');
+
+console.log('Enums dinâmicos e prioridade de mercado aprovados: nenhum valor da fonte é descartado, a busca usa a string exata e o preço nacional (quando presente) tem prioridade sem conversão de câmbio.');

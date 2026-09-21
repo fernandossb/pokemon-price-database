@@ -130,12 +130,21 @@ function addCardmarketValues(values, cardmarket, keys, fx, enumValue) {
  * Cardmarket's explicit normal/holo buckets when the exact enum is normal or
  * holo. No alias, translated name or legacy value is accepted.
  */
-export function marketValues(card, variantEnum, fx) {
+export function marketValues(card, variantEnum, fx, ligaPrice) {
   const exact = exactEnum(variantEnum);
   if (!exact) return { values: [], sourceEnums: [] };
 
   const values = [];
   const sourceEnums = [];
+
+  // Preço nacional (BRL, sem conversão de câmbio). Só chega aqui quando a
+  // carta tem exatamente uma variante possível — ver process-shard.mjs — já
+  // que a busca da Liga não distingue normal de holo pelo número da carta.
+  if (ligaPrice && Number.isFinite(ligaPrice.min) && ligaPrice.min > 0) {
+    sourceEnums.push({ provider: 'ligapokemon', value: exact });
+    values.push({ source: 'ligapokemon:min', value: ligaPrice.min });
+  }
+
   const tcgplayer = card?.pricing?.tcgplayer && typeof card.pricing.tcgplayer === 'object'
     ? card.pricing.tcgplayer
     : {};
@@ -169,10 +178,12 @@ function simpleAverage(values) {
 
 // Ordem de preferência dos mercados. O preço publicado vem de UM mercado só —
 // o primeiro desta lista que tenha valor para a variante —, não de uma média
-// entre os três. Misturar TCGplayer (dólar, mercado americano) com Cardmarket
+// entre eles. Misturar TCGplayer (dólar, mercado americano) com Cardmarket
 // (euro, mercado europeu) produz um número que não corresponde a lugar nenhum.
-// TCGdex não tem preço próprio: ele republica os outros dois.
-const SOURCE_PRIORITY = ['tcgplayer', 'tcgdex', 'cardmarket'];
+// ligapokemon vem primeiro por já ser o preço nacional (BRL, menor preço de
+// venda do marketplace) — é sempre preferível ao convertido por câmbio
+// quando existe. TCGdex não tem preço próprio: ele republica os outros dois.
+const SOURCE_PRIORITY = ['ligapokemon', 'tcgplayer', 'tcgdex', 'cardmarket'];
 
 function providerOf(sourceId) {
   return String(sourceId || '').split(':')[0];
@@ -196,8 +207,8 @@ function pickPriorityMarket(values) {
   return { provider: '', values: [] };
 }
 
-export function resolvePrice({ card, variantEnum, fx }) {
-  const market = marketValues(card, variantEnum, fx);
+export function resolvePrice({ card, variantEnum, fx, ligaPrice }) {
+  const market = marketValues(card, variantEnum, fx, ligaPrice);
   if (!market.values.length) return null;
   const chosen = pickPriorityMarket(market.values);
   if (!chosen.values.length) return null;

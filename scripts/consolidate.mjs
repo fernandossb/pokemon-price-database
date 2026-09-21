@@ -117,6 +117,7 @@ const indexPayload = {
 };
 
 const variantsDiscovered = Object.values(publishedVariantCatalog).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0);
+const ligaPokemonMatched = shardMetas.reduce((sum, shardMeta) => sum + (Number(shardMeta.ligaPokemonMatched) || 0), 0);
 const meta = {
   schemaVersion: 4,
   format: 'sharded-v2',
@@ -133,6 +134,7 @@ const meta = {
   variantsPriced: Object.keys(publishedPrices).length,
   unmatched: unmatched.length,
   changedPrices: Object.keys(changes).length,
+  ligaPokemonMatched,
   workers: shardMetas,
 };
 

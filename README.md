@@ -32,10 +32,11 @@ Cada shard publica também `variantCatalog`. Assim, um enum confirmado pelas fon
 
 ## Fontes e cálculo
 
+- Liga Pokémon: menor preço de venda do marketplace nacional, já em BRL. Só é buscado para cartas `pt-br` com exatamente uma variante possível (a busca da Liga não distingue normal de holo pelo número da carta — misturar seria aplicar o mesmo preço aos dois acabamentos). Fonte de maior prioridade quando encontrada; melhor esforço, com interruptor em `config.json` (`ligaPokemon.enabled`) — qualquer falha cai silenciosamente para as fontes internacionais abaixo.
 - TCGplayer: para uma variante, somente o objeto cuja chave seja exatamente igual ao `variantEnum`.
 - Cardmarket: os grupos explícitos `normal` e `holo`, além de futuros objetos de variante caso sejam publicados.
-- Conversão de EUR e USD para BRL pelo Frankfurter.
-- Média aritmética simples dos valores positivos disponíveis para o enum exato.
+- Conversão de EUR e USD para BRL pelo Frankfurter (não se aplica ao preço da Liga Pokémon, que já é nacional).
+- Média aritmética simples dos valores positivos disponíveis para o enum exato, dentro de um único mercado (ver `SOURCE_PRIORITY` em `scripts/lib.mjs`).
 
 ## Arquivos publicados
 

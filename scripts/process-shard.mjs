@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import { getCard } from './providers/tcgdex.mjs';
+import { searchCardPrice } from './providers/ligaPokemon.mjs';
 import { config, getFx, nowIso, readJson, resolvePrice, sleep, variantCatalog } from './lib.mjs';
 
 const shardIndex = Number(process.env.SHARD_INDEX);
@@ -22,6 +23,14 @@ const prices = previousShard.prices || {};
 const variantsByCard = previousShard.variantCatalog || {};
 const unmatched = [];
 let cursor = 0;
+
+// Preço nacional é best-effort e tem interruptor próprio em config.json —
+// se o endpoint da Liga começar a bloquear/mudar, dá para desligar sem
+// deploy de código. Nenhuma falha aqui derruba o shard: cai para as fontes
+// internacionais como já acontecia antes desta fonte existir.
+const ligaConfig = config.ligaPokemon || {};
+const ligaEnabled = ligaConfig.enabled !== false;
+let ligaMatched = 0;
 
 async function fetchAllLanguages(summary) {
   const languages = summary.availableLanguages?.length ? summary.availableLanguages : config.languages;
@@ -68,13 +77,36 @@ async function processOne(summary) {
     unmatched.push({ id: summary.id, reason: 'card_not_loaded', checkedAt: nowIso() });
     return;
   }
+
+  const enumsByLanguage = new Map(loadedList.map(({ card, language }) => [language, variantCatalog(card)]));
+
+  // Preço nacional só é buscado quando a carta pt-br tem exatamente uma
+  // variante: a busca da Liga não distingue normal de holo pelo número da
+  // carta, então aplicar o mesmo valor às duas seria misturar preços de
+  // acabamentos diferentes — o tipo de coisa que este projeto evita.
+  let ligaPrice = null;
+  if (ligaEnabled) {
+    const ptBr = loadedList.find(entry => entry.language === 'pt-br');
+    const ptBrEnums = ptBr ? enumsByLanguage.get('pt-br') : null;
+    const total = ptBr?.card.set?.cardCount?.official;
+    if (ptBr && ptBrEnums?.length === 1 && ptBr.card.localId && Number.isFinite(total) && total > 0) {
+      ligaPrice = await searchCardPrice(
+        { name: ptBr.card.name, num: ptBr.card.localId, total },
+        { attempts: ligaConfig.maxAttempts, retryDelayMs: ligaConfig.retryDelayMs, maxPages: ligaConfig.maxPages },
+      );
+      if (ligaPrice) ligaMatched += 1;
+      await sleep(ligaConfig.requestDelayMs ?? config.requestDelayMs ?? 80);
+    }
+  }
+
   for (const { card, language } of loadedList) {
-    const available = variantCatalog(card);
+    const available = enumsByLanguage.get(language);
     mergeVariantCatalog(card.id, language, available);
     for (const enumInfo of available) {
       const variantEnum = enumInfo.value;
       const key = `${card.id}::${language}::${variantEnum}`;
-      const resolved = resolvePrice({ card, variantEnum, fx });
+      const applicableLiga = language === 'pt-br' && available.length === 1 ? ligaPrice : null;
+      const resolved = resolvePrice({ card, variantEnum, fx, ligaPrice: applicableLiga });
       if (!resolved) {
         unmatched.push({
           id: card.id,
@@ -135,6 +167,7 @@ const result = {
     variantsDiscovered: Object.values(variantsByCard).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0),
     variantsPriced: Object.keys(prices).length,
     unmatched: unmatched.length,
+    ligaPokemonMatched: ligaMatched,
     fx,
   },
   prices,
@@ -142,4 +175,4 @@ const result = {
   unmatched,
 };
 await fs.writeFile(`work/shards/shard-${shardTag}.json`, JSON.stringify(result));
-console.log(`Shard ${shardIndex} concluído: ${cards.length} cartas, ${Object.keys(prices).length} enums com preço, ${unmatched.length} pendências.`);
+console.log(`Shard ${shardIndex} concluído: ${cards.length} cartas, ${Object.keys(prices).length} enums com preço, ${ligaMatched} com preço nacional (Liga Pokémon), ${unmatched.length} pendências.`);

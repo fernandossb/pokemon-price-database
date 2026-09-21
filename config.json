@@ -7,5 +7,12 @@
   "retryDelayMs": 500,
   "maxConcurrentRequestsPerShard": 4,
   "minimumConfidence": 35,
-  "priceChangeThresholdPercent": 0.1
+  "priceChangeThresholdPercent": 0.1,
+  "ligaPokemon": {
+    "enabled": true,
+    "requestDelayMs": 300,
+    "maxAttempts": 3,
+    "retryDelayMs": 500,
+    "maxPages": 3
+  }
 }
