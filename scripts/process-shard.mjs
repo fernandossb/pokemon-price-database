@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises';
 import { getCard } from './providers/tcgdex.mjs';
 import { searchCardPrice } from './providers/ligaPokemon.mjs';
-import { loadBrazilianPrices } from './providers/brCsv.mjs';
 import { config, getFx, nowIso, readJson, resolvePrice, sleep, variantCatalog } from './lib.mjs';
 
 const shardIndex = Number(process.env.SHARD_INDEX);
@@ -17,7 +16,7 @@ const cards = catalog.cards.filter((_, index) => index % shardCount === shardInd
 const fx = await getFx();
 
 const previousShardRaw = await readJson(`cache/shards/shard-${shardTag}.json`, { prices: {}, variantCatalog: {} });
-const previousShard = Number(previousShardRaw?.meta?.schemaVersion) === 5
+const previousShard = Number(previousShardRaw?.meta?.schemaVersion) === 4
   ? previousShardRaw
   : { prices: {}, variantCatalog: {} };
 const prices = previousShard.prices || {};
@@ -25,40 +24,13 @@ const variantsByCard = previousShard.variantCatalog || {};
 const unmatched = [];
 let cursor = 0;
 
-// Preço nacional automático é best-effort e tem interruptor próprio em
-// config.json — se o endpoint da Liga começar a bloquear/mudar, dá para
-// desligar sem deploy de código. Nenhuma falha aqui derruba o shard: cai
-// para as fontes internacionais como já acontecia antes desta fonte existir.
+// Preço nacional é best-effort e tem interruptor próprio em config.json —
+// se o endpoint da Liga começar a bloquear/mudar, dá para desligar sem
+// deploy de código. Nenhuma falha aqui derruba o shard: cai para as fontes
+// internacionais como já acontecia antes desta fonte existir.
 const ligaConfig = config.ligaPokemon || {};
 const ligaEnabled = ligaConfig.enabled !== false;
 let ligaMatched = 0;
-
-// Preço conferido manualmente (data/br-prices.csv) — uma pessoa olhando a
-// Liga Pokémon como qualquer cliente, sem automação, para a condição exata
-// de cartas cadastradas. Indexado por "cardId::language::finish" para achar
-// rápido quais condições existem para cada enum sem varrer o mapa inteiro.
-const brManualPrices = await loadBrazilianPrices();
-const brManualConditionsByEnum = new Map();
-for (const key of brManualPrices.keys()) {
-  const lastSep = key.lastIndexOf('::');
-  const prefix = key.slice(0, lastSep);
-  const condition = key.slice(lastSep + 2);
-  if (!brManualConditionsByEnum.has(prefix)) brManualConditionsByEnum.set(prefix, new Set());
-  brManualConditionsByEnum.get(prefix).add(condition);
-}
-
-// Condições publicadas numa execução anterior, para o mesmo fim: sem isto,
-// uma condição que já não tem preço nenhum (CSV editado, Liga sem estoque)
-// nunca seria apagada — ficaria presa no banco publicado para sempre.
-const previousConditionsByPrefix = new Map();
-for (const key of Object.keys(prices)) {
-  const parts = key.split('::');
-  if (parts.length !== 4) continue;
-  const [cardId, language, variantEnum, condition] = parts;
-  const prefix = `${cardId}::${language}::${variantEnum}`;
-  if (!previousConditionsByPrefix.has(prefix)) previousConditionsByPrefix.set(prefix, new Set());
-  previousConditionsByPrefix.get(prefix).add(condition);
-}
 
 async function fetchAllLanguages(summary) {
   const languages = summary.availableLanguages?.length ? summary.availableLanguages : config.languages;
@@ -108,15 +80,16 @@ async function processOne(summary) {
 
   const enumsByLanguage = new Map(loadedList.map(({ card, language }) => [language, variantCatalog(card)]));
 
-  // Preço nacional automático: busca só pt-br, num endpoint público sem
-  // login/cookie. É um preço só, sem recorte de condição — por isso só é
-  // aplicado à condição "mercado" mais abaixo, nunca a uma condição
-  // específica (essa vem só de data/br-prices.csv, conferida por pessoa).
+  // Preço nacional só é buscado quando a carta pt-br tem exatamente uma
+  // variante: a busca da Liga não distingue normal de holo pelo número da
+  // carta, então aplicar o mesmo valor às duas seria misturar preços de
+  // acabamentos diferentes — o tipo de coisa que este projeto evita.
   let ligaPrice = null;
   if (ligaEnabled) {
     const ptBr = loadedList.find(entry => entry.language === 'pt-br');
+    const ptBrEnums = ptBr ? enumsByLanguage.get('pt-br') : null;
     const total = ptBr?.card.set?.cardCount?.official;
-    if (ptBr && ptBr.card.localId && Number.isFinite(total) && total > 0) {
+    if (ptBr && ptBrEnums?.length === 1 && ptBr.card.localId && Number.isFinite(total) && total > 0) {
       ligaPrice = await searchCardPrice(
         { name: ptBr.card.name, num: ptBr.card.localId, total },
         { attempts: ligaConfig.maxAttempts, retryDelayMs: ligaConfig.retryDelayMs, maxPages: ligaConfig.maxPages },
@@ -131,64 +104,41 @@ async function processOne(summary) {
     mergeVariantCatalog(card.id, language, available);
     for (const enumInfo of available) {
       const variantEnum = enumInfo.value;
-      const prefix = `${card.id}::${language}::${variantEnum}`;
-
-      // "mercado" é sempre publicada (preço sem condição específica, igual
-      // ao banco antes de existir a dimensão de condição). As demais só
-      // existem quando há cadastro manual para elas agora ou existiam na
-      // publicação anterior (para poder ser removida quando some do CSV).
-      const conditions = new Set([
-        'mercado',
-        ...(brManualConditionsByEnum.get(prefix) ?? []),
-        ...(previousConditionsByPrefix.get(prefix) ?? []),
-      ]);
-
-      for (const condition of conditions) {
-        const key = `${prefix}::${condition}`;
-        const brManualValues = brManualPrices.get(key) ?? null;
-        const resolved = resolvePrice({
-          card,
-          variantEnum,
-          fx,
-          ligaPrice: condition === 'mercado' && language === 'pt-br' ? ligaPrice : null,
-          brManualValues,
-        });
-        if (!resolved) {
-          if (condition === 'mercado') {
-            unmatched.push({
-              id: card.id,
-              language,
-              variantEnum,
-              sources: enumInfo.sources,
-              reason: 'no_exact_price_for_enum',
-              checkedAt: nowIso(),
-            });
-          }
-          delete prices[key];
-          continue;
-        }
-        prices[key] = {
-          cardId: card.id,
+      const key = `${card.id}::${language}::${variantEnum}`;
+      const applicableLiga = language === 'pt-br' && available.length === 1 ? ligaPrice : null;
+      const resolved = resolvePrice({ card, variantEnum, fx, ligaPrice: applicableLiga });
+      if (!resolved) {
+        unmatched.push({
+          id: card.id,
           language,
           variantEnum,
-          condition,
-          enumSources: enumInfo.sources,
-          enumKinds: enumInfo.kinds,
-          name: card.name,
-          number: card.localId,
-          // Total impresso na carta ("015/094" usa o oficial, não o total com
-          // secretas). Ambos são publicados para a identificação exata no app.
-          setTotal: card.set?.cardCount?.official ?? null,
-          setTotalWithSecrets: card.set?.cardCount?.total ?? null,
-          setId: card.set?.id || null,
-          setName: card.set?.name || null,
-          rarity: card.rarity || null,
-          illustrator: card.illustrator || null,
-          promotional: Boolean(card.set?.id?.toLowerCase().includes('promo')),
-          updatedAt: nowIso(),
-          ...resolved,
-        };
+          sources: enumInfo.sources,
+          reason: 'no_exact_price_for_enum',
+          checkedAt: nowIso(),
+        });
+        delete prices[key];
+        continue;
       }
+      prices[key] = {
+        cardId: card.id,
+        language,
+        variantEnum,
+        enumSources: enumInfo.sources,
+        enumKinds: enumInfo.kinds,
+        name: card.name,
+        number: card.localId,
+        // Total impresso na carta ("015/094" usa o oficial, não o total com
+        // secretas). Ambos são publicados para a identificação exata no app.
+        setTotal: card.set?.cardCount?.official ?? null,
+        setTotalWithSecrets: card.set?.cardCount?.total ?? null,
+        setId: card.set?.id || null,
+        setName: card.set?.name || null,
+        rarity: card.rarity || null,
+        illustrator: card.illustrator || null,
+        promotional: Boolean(card.set?.id?.toLowerCase().includes('promo')),
+        updatedAt: nowIso(),
+        ...resolved,
+      };
     }
   }
 }
@@ -208,7 +158,7 @@ await Promise.all(Array.from({ length: concurrency }, () => worker()));
 await fs.mkdir('work/shards', { recursive: true });
 const result = {
   meta: {
-    schemaVersion: 5,
+    schemaVersion: 4,
     shardIndex,
     shardCount,
     catalogHash: catalog.hash,

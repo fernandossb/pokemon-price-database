@@ -19,7 +19,7 @@ async function loadPreviousPrices() {
     const files = (await fs.readdir(OUTPUT_SHARD_DIR)).filter(file => /^shard-\d+\.json$/.test(file));
     for (const file of files) {
       const shard = await readJson(path.join(OUTPUT_SHARD_DIR, file), null);
-      if (Number(shard?.meta?.schemaVersion) === 5) Object.assign(previous, shard?.prices || {});
+      if (Number(shard?.meta?.schemaVersion) === 4) Object.assign(previous, shard?.prices || {});
     }
   } catch {}
   return previous;
@@ -42,7 +42,7 @@ const outputShardFiles = [];
 for (const file of files) {
   const result = await readJson(path.join('work/shards', file), null);
   if (!result?.meta) continue;
-  if (Number(result.meta.schemaVersion) !== 5) throw new Error(`Schema antigo em ${file}`);
+  if (Number(result.meta.schemaVersion) !== 4) throw new Error(`Schema antigo em ${file}`);
   if (result.meta.catalogHash !== catalog.hash) throw new Error(`Hash de catálogo divergente em ${file}`);
 
   shardMetas.push(result.meta);
@@ -69,8 +69,8 @@ for (const file of files) {
   const outputName = `shard-${String(shardIndex).padStart(2, '0')}.json`;
   const outputPayload = {
     meta: {
-      schemaVersion: 5,
-      format: 'price-shard-v3',
+      schemaVersion: 4,
+      format: 'price-shard-v2',
       shardIndex,
       shardCount: Number(result.meta.shardCount) || SHARD_COUNT,
       catalogHash: catalog.hash,
@@ -106,8 +106,8 @@ const completeShards = new Set(shardMetas.map(meta => meta.shardIndex));
 const cardShardIndex = Object.fromEntries(catalog.cards.map((card, index) => [card.id, index % SHARD_COUNT]));
 const indexPayload = {
   meta: {
-    schemaVersion: 5,
-    format: 'card-shard-index-v3',
+    schemaVersion: 4,
+    format: 'card-shard-index-v2',
     generatedAt,
     catalogHash: catalog.hash,
     shardCount: SHARD_COUNT,
@@ -119,8 +119,8 @@ const indexPayload = {
 const variantsDiscovered = Object.values(publishedVariantCatalog).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0);
 const ligaPokemonMatched = shardMetas.reduce((sum, shardMeta) => sum + (Number(shardMeta.ligaPokemonMatched) || 0), 0);
 const meta = {
-  schemaVersion: 5,
-  format: 'sharded-v3',
+  schemaVersion: 4,
+  format: 'sharded-v2',
   status: completeShards.size === SHARD_COUNT ? 'complete' : 'partial',
   generatedAt,
   date: todayUtc(),

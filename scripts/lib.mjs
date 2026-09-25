@@ -130,28 +130,16 @@ function addCardmarketValues(values, cardmarket, keys, fx, enumValue) {
  * Cardmarket's explicit normal/holo buckets when the exact enum is normal or
  * holo. No alias, translated name or legacy value is accepted.
  */
-export function marketValues(card, variantEnum, fx, ligaPrice, brManualValues) {
+export function marketValues(card, variantEnum, fx, ligaPrice) {
   const exact = exactEnum(variantEnum);
   if (!exact) return { values: [], sourceEnums: [] };
 
   const values = [];
   const sourceEnums = [];
 
-  // Preço conferido manualmente — uma pessoa olhando a Liga Pokémon como
-  // qualquer cliente, sem automação, para a condição exata da carta. Maior
-  // prioridade: é o dado mais preciso que este banco pode ter.
-  if (Array.isArray(brManualValues) && brManualValues.length) {
-    sourceEnums.push({ provider: 'br-manual', value: exact });
-    for (const item of brManualValues) {
-      if (Number.isFinite(item?.priceBrl) && item.priceBrl > 0) {
-        values.push({ source: `br-manual:${item.source || 'manual'}`, value: item.priceBrl });
-      }
-    }
-  }
-
-  // Preço nacional automático (BRL, sem conversão de câmbio), buscado num
-  // endpoint público da Liga sem recorte de condição — por isso só vale para
-  // a condição "mercado" (ver process-shard.mjs).
+  // Preço nacional (BRL, sem conversão de câmbio). Só chega aqui quando a
+  // carta tem exatamente uma variante possível — ver process-shard.mjs — já
+  // que a busca da Liga não distingue normal de holo pelo número da carta.
   if (ligaPrice && Number.isFinite(ligaPrice.min) && ligaPrice.min > 0) {
     sourceEnums.push({ provider: 'ligapokemon', value: exact });
     values.push({ source: 'ligapokemon:min', value: ligaPrice.min });
@@ -192,11 +180,10 @@ function simpleAverage(values) {
 // o primeiro desta lista que tenha valor para a variante —, não de uma média
 // entre eles. Misturar TCGplayer (dólar, mercado americano) com Cardmarket
 // (euro, mercado europeu) produz um número que não corresponde a lugar nenhum.
-// br-manual vem primeiro por ser conferido por uma pessoa na condição exata;
-// ligapokemon em seguida por já ser preço nacional (BRL, sem câmbio), ainda
-// que sem recorte de condição. TCGdex não tem preço próprio: ele republica
-// os outros dois.
-const SOURCE_PRIORITY = ['br-manual', 'ligapokemon', 'tcgplayer', 'tcgdex', 'cardmarket'];
+// ligapokemon vem primeiro por já ser o preço nacional (BRL, menor preço de
+// venda do marketplace) — é sempre preferível ao convertido por câmbio
+// quando existe. TCGdex não tem preço próprio: ele republica os outros dois.
+const SOURCE_PRIORITY = ['ligapokemon', 'tcgplayer', 'tcgdex', 'cardmarket'];
 
 function providerOf(sourceId) {
   return String(sourceId || '').split(':')[0];
@@ -220,8 +207,8 @@ function pickPriorityMarket(values) {
   return { provider: '', values: [] };
 }
 
-export function resolvePrice({ card, variantEnum, fx, ligaPrice, brManualValues }) {
-  const market = marketValues(card, variantEnum, fx, ligaPrice, brManualValues);
+export function resolvePrice({ card, variantEnum, fx, ligaPrice }) {
+  const market = marketValues(card, variantEnum, fx, ligaPrice);
   if (!market.values.length) return null;
   const chosen = pickPriorityMarket(market.values);
   if (!chosen.values.length) return null;
