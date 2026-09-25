@@ -81,4 +81,20 @@ assert(
 const semLiga = resolvePrice({ card, variantEnum: 'normal', fx, ligaPrice: null });
 assert.equal(semLiga.priceMarket, 'tcgplayer', 'Sem preço nacional, mercado internacional decide como antes');
 
-console.log('Enums dinâmicos e prioridade de mercado aprovados: nenhum valor da fonte é descartado, a busca usa a string exata e o preço nacional (quando presente) tem prioridade sem conversão de câmbio.');
+// --- Preço conferido manualmente (br-manual) tem prioridade máxima ---
+
+const comManual = resolvePrice({
+  card,
+  variantEnum: 'normal',
+  fx,
+  ligaPrice: { min: 12.5, avg: 15, max: 20 },
+  brManualValues: [{ priceBrl: 9.9, source: 'liga' }],
+});
+assert.equal(comManual.priceMarket, 'br-manual', 'Preço conferido manualmente tem prioridade sobre tudo, inclusive o automático');
+assert.equal(comManual.priceBrl, 9.9, 'Usa o valor cadastrado direto em reais');
+assert(
+  comManual.sources.some(item => item.source.startsWith('ligapokemon:') && item.used === false),
+  'Preço automático continua registrado como referência, marcado como não usado'
+);
+
+console.log('Enums dinâmicos e prioridade de mercado aprovados: nenhum valor da fonte é descartado, a busca usa a string exata e o preço nacional (manual ou automático, quando presente) tem prioridade sem conversão de câmbio.');

@@ -1,3 +1,6 @@
-card_id,finish,source,price_brl,url,observed_at
-# Exemplo:
-# sv3pt5-199,holo,liga,999.90,https://exemplo,2026-07-23
+card_id,language,finish,condition,source,price_brl,url,observed_at
+# Preço conferido manualmente na Liga Pokémon (uma pessoa olhando o site como
+# qualquer cliente, sem automação) para cartas cadastradas no app. `condition`
+# vazio publica em "mercado" (sem condição específica, mesmo sentido do preço
+# internacional). Exemplo:
+# sv3pt5-199,pt-br,holo,M,liga,999.90,https://www.ligapokemon.com.br/...,2026-09-25
