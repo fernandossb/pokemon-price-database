@@ -13,6 +13,8 @@ const catalog = await readJson('work/catalog.json', null);
 if (!catalog?.cards?.length) throw new Error('work/catalog.json ausente ou vazio');
 const cards = catalog.cards.filter((_, index) => index % shardCount === shardIndex);
 const fx = await getFx();
+// Preços do TCGplayer por produto (tcgcsv), para as versões com foil especial.
+const tcgplayerProducts = (await readJson('work/tcgplayer-products.json', { products: {} }))?.products || {};
 
 const previousShardRaw = await readJson(`cache/shards/shard-${shardTag}.json`, { prices: {}, variantCatalog: {} });
 const previousShard = Number(previousShardRaw?.meta?.schemaVersion) === 4
@@ -69,12 +71,12 @@ async function processOne(summary) {
     return;
   }
   for (const { card, language } of loadedList) {
-    const available = variantCatalog(card);
+    const available = variantCatalog(card, tcgplayerProducts);
     mergeVariantCatalog(card.id, language, available);
     for (const enumInfo of available) {
       const variantEnum = enumInfo.value;
       const key = `${card.id}::${language}::${variantEnum}`;
-      const resolved = resolvePrice({ card, variantEnum, fx });
+      const resolved = resolvePrice({ card, variantEnum, fx, tcgplayerProducts });
       if (!resolved) {
         unmatched.push({
           id: card.id,

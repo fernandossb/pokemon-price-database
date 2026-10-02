@@ -61,6 +61,90 @@ function hasAnyCardmarketPrice(cardmarket, keys) {
   return keys.some(key => hasPositiveNumber(cardmarket?.[key]));
 }
 
+/* ---------- Versões com foil especial ----------
+
+   Cosmos Holo, Poké Ball, Master Ball, Cracked Ice... O TCGplayer vende cada
+   uma como produto próprio (as Cosmos ficam em "Miscellaneous Cards &
+   Products"), e o TCGdex liga cada versão da carta ao produto exato em
+   `variants_detailed[].thirdParty.tcgplayer`. Cada uma vira um enum próprio
+   na carta certa, com o nome que o app usa: "<foil>-holofoil"
+   ("cosmos-holofoil", "pokeball-holofoil"...). Ficam marcadas como
+   "special-foil": o app as mostra à parte, não entre as versões básicas.
+   Carimbo e tamanho especial ficam de fora — não têm preço próprio aqui. */
+function slugDeVariacao(value) {
+  return exactEnum(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+export function specialFoilEnum(foil) {
+  const base = slugDeVariacao(foil).replace(/-?holo(foil)?$/, '').replace(/-ball$/, 'ball');
+  return base ? `${base}-holofoil` : '';
+}
+
+export function specialFoilVariants(card) {
+  const detailed = Array.isArray(card?.variants_detailed) ? card.variants_detailed : [];
+  const byEnum = new Map();
+  for (const variant of detailed) {
+    if (!variant?.foil) continue;
+    const stamps = Array.isArray(variant.stamp) ? variant.stamp : variant.stamp ? [variant.stamp] : [];
+    if (stamps.length) continue;
+    if (variant.size && variant.size !== 'standard') continue;
+    if (variant.subtype && variant.subtype !== 'unlimited') continue;
+    let value = specialFoilEnum(variant.foil);
+    if (!value) continue;
+    // O mesmo foil em holo e em reverse na mesma carta: o reverse ganha nome próprio.
+    if (byEnum.has(value)) {
+      const reverso = value.replace(/-holofoil$/, '-reverse-holofoil');
+      if (String(variant.type) === 'reverse') value = reverso;
+      else { byEnum.set(reverso, byEnum.get(value)); byEnum.delete(value); }
+    }
+    byEnum.set(value, variant);
+  }
+  return byEnum;
+}
+
+// O primeiro subtipo com preço do produto: holofoil, reverse, normal, o resto.
+function productPriceObject(product) {
+  if (!product || typeof product !== 'object') return null;
+  for (const key of ['holofoil', 'reverse-holofoil', 'normal']) {
+    if (hasPriceObject(product[key])) return product[key];
+  }
+  for (const [key, value] of Object.entries(product)) {
+    if (!TCGPLAYER_META_KEYS.has(key) && hasPriceObject(value)) return value;
+  }
+  return null;
+}
+
+function specialFoilTcgplayer(variant, tcgplayerProducts) {
+  return productPriceObject(variant?.pricing?.tcgplayer)
+    || productPriceObject(tcgplayerProducts?.[variant?.thirdParty?.tcgplayer]);
+}
+
+function specialFoilCardmarketKeys(variant) {
+  const cardmarket = variant?.pricing?.cardmarket;
+  if (hasAnyCardmarketPrice(cardmarket, CARDMARKET_NON_FOIL_KEYS)) return CARDMARKET_NON_FOIL_KEYS;
+  if (hasAnyCardmarketPrice(cardmarket, CARDMARKET_FOIL_KEYS)) return CARDMARKET_FOIL_KEYS;
+  return null;
+}
+
+/* Preço da versão especial: o do PRODUTO dela. TCGplayer (o que o TCGdex
+   trouxer ou, sem isso, o tcgcsv pelo número do produto); senão o Cardmarket
+   daquele produto. Nunca o preço da carta comum. */
+function specialFoilMarketValues(variant, exact, fx, tcgplayerProducts) {
+  const values = [];
+  const sourceEnums = [];
+  const tcg = specialFoilTcgplayer(variant, tcgplayerProducts);
+  if (tcg) {
+    sourceEnums.push({ provider: 'tcgplayer', value: exact });
+    for (const field of VALUATION_FIELDS) pushConverted(values, `tcgplayer:${exact}:${field}`, tcg[field], fx.usdBrl);
+  }
+  const cardmarketKeys = specialFoilCardmarketKeys(variant);
+  if (cardmarketKeys) {
+    sourceEnums.push({ provider: 'cardmarket', value: exact });
+    addCardmarketValues(values, variant.pricing.cardmarket, cardmarketKeys, fx, exact);
+  }
+  return { values, sourceEnums };
+}
+
 function addCatalogEnum(map, value, source, priced = false, kind = 'variant') {
   const exact = exactEnum(value);
   if (!exact) return;
@@ -75,7 +159,7 @@ function addCatalogEnum(map, value, source, priced = false, kind = 'variant') {
  * Returns every exact enum exposed for this card by TCGdex, TCGplayer or
  * Cardmarket. No allowlist is used: a future enum is preserved automatically.
  */
-export function variantCatalog(card) {
+export function variantCatalog(card, tcgplayerProducts = {}) {
   const found = new Map();
   const tcgdexVariants = card?.variants && typeof card.variants === 'object' ? card.variants : {};
   for (const [key, value] of Object.entries(tcgdexVariants)) {
@@ -106,6 +190,12 @@ export function variantCatalog(card) {
     addCatalogEnum(found, key, 'cardmarket', hasPriceObject(value), 'market-variant');
   }
 
+  // Versões com foil especial, cada uma ligada ao próprio produto.
+  for (const [value, variant] of specialFoilVariants(card)) {
+    const priced = Boolean(specialFoilTcgplayer(variant, tcgplayerProducts) || specialFoilCardmarketKeys(variant));
+    addCatalogEnum(found, value, 'tcgdex', priced, 'special-foil');
+  }
+
   return [...found.values()]
     .map(item => ({
       value: item.value,
@@ -130,9 +220,12 @@ function addCardmarketValues(values, cardmarket, keys, fx, enumValue) {
  * Cardmarket's explicit normal/holo buckets when the exact enum is normal or
  * holo. No alias, translated name or legacy value is accepted.
  */
-export function marketValues(card, variantEnum, fx) {
+export function marketValues(card, variantEnum, fx, tcgplayerProducts = {}) {
   const exact = exactEnum(variantEnum);
   if (!exact) return { values: [], sourceEnums: [] };
+
+  const special = specialFoilVariants(card).get(exact);
+  if (special) return specialFoilMarketValues(special, exact, fx, tcgplayerProducts);
 
   const values = [];
   const sourceEnums = [];
@@ -196,8 +289,8 @@ function pickPriorityMarket(values) {
   return { provider: '', values: [] };
 }
 
-export function resolvePrice({ card, variantEnum, fx }) {
-  const market = marketValues(card, variantEnum, fx);
+export function resolvePrice({ card, variantEnum, fx, tcgplayerProducts = {} }) {
+  const market = marketValues(card, variantEnum, fx, tcgplayerProducts);
   if (!market.values.length) return null;
   const chosen = pickPriorityMarket(market.values);
   if (!chosen.values.length) return null;

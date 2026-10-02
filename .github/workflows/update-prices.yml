@@ -29,10 +29,16 @@ jobs:
         run: npm test
       - name: Gerar catálogo consolidado
         run: npm run catalog
+      # Preços do TCGplayer por produto (tcgcsv.com), para as versões com foil
+      # especial (Cosmos Holo, Poké Ball...). Falhando, segue sem eles.
+      - name: Baixar preços do TCGplayer por produto
+        run: npm run tcgplayer
       - uses: actions/upload-artifact@v4
         with:
           name: catalog
-          path: work/catalog.json
+          path: |
+            work/catalog.json
+            work/tcgplayer-products.json
           retention-days: 2
 
   prices:
