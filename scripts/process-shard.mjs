@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import { getCard } from './providers/tcgdex.mjs';
+import { loadLigaOffers, summarizeLigaOffers } from './providers/ligaPokemon.mjs';
 import { config, getFx, nowIso, readJson, resolvePrice, sleep, variantCatalog } from './lib.mjs';
 
 const shardIndex = Number(process.env.SHARD_INDEX);
@@ -15,6 +16,8 @@ const cards = catalog.cards.filter((_, index) => index % shardCount === shardInd
 const fx = await getFx();
 // Preços do TCGplayer por produto (tcgcsv), para as versões com foil especial.
 const tcgplayerProducts = (await readJson('work/tcgplayer-products.json', { products: {} }))?.products || {};
+// Arquivo auditável de ofertas brasileiras: não faz scraping nem ignora bloqueios do site.
+const ligaOffers = await loadLigaOffers();
 
 const previousShardRaw = await readJson(`cache/shards/shard-${shardTag}.json`, { prices: {}, variantCatalog: {} });
 const previousShard = Number(previousShardRaw?.meta?.schemaVersion) === 4
@@ -76,7 +79,21 @@ async function processOne(summary) {
     for (const enumInfo of available) {
       const variantEnum = enumInfo.value;
       const key = `${card.id}::${language}::${variantEnum}`;
-      const resolved = resolvePrice({ card, variantEnum, fx, tcgplayerProducts });
+      const externalPrice = resolvePrice({ card, variantEnum, fx, tcgplayerProducts });
+      const liga = summarizeLigaOffers(ligaOffers.get(key));
+      // Uma única oferta não define preço de mercado. Exigir 3 vendedores NM distintos.
+      const ligaReference = liga && liga.sellerCount >= 3 ? {
+        priceBrl: liga.medianPriceBrl,
+        confidence: Math.min(85, 35 + liga.sellerCount * 10),
+        matchLevel: 'exact',
+        estimatedDimensions: [],
+        priceMarket: 'ligapokemon',
+        sourceEnums: [{ provider: 'ligapokemon', value: variantEnum }],
+        sources: liga.offers.map(offer => ({
+          source: 'ligapokemon:listing', valueBrl: offer.priceBrl, used: true, detail: offer.url,
+        })),
+      } : null;
+      const resolved = ligaReference || externalPrice;
       if (!resolved) {
         unmatched.push({
           id: card.id,
@@ -108,6 +125,14 @@ async function processOne(summary) {
         promotional: Boolean(card.set?.id?.toLowerCase().includes('promo')),
         updatedAt: nowIso(),
         ...resolved,
+        ...(liga ? { brazilMarket: {
+          source: 'ligapokemon', sellerCount: liga.sellerCount,
+          medianPriceBrl: liga.medianPriceBrl,
+          minimumPriceBrl: liga.minimumPriceBrl,
+          maximumPriceBrl: liga.maximumPriceBrl,
+          usedForPrice: Boolean(ligaReference),
+          listingUrls: liga.offers.map(item => item.url),
+        }} : {}),
       };
     }
   }
