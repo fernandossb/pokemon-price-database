@@ -58,3 +58,31 @@ Cosmos Holo, Poké Ball, Master Ball, Cracked Ice e afins são vendidas pelo TCG
 ## Publicação
 
 A atualização automática roda diariamente às 03:00 no horário de Brasília e também pode ser iniciada em **Actions → Atualizar tabela de preços em paralelo → Run workflow**.
+
+
+## Preços brasileiros da Liga Pokémon
+
+O pipeline aceita anúncios **verificados** em `data/ligapokemon-offers.json` (`schemaVersion: 1`).
+O monitor deve adicionar registros apenas quando confirmar que a URL aponta para um
+anúncio público real, com preço em reais, vendedor, identificação exata da carta
+(`cardId` TCGdex), idioma, `variantEnum` **idêntico** ao do catálogo,
+condição, identificador estável (`listingId`) e data de observação.
+O arquivo nunca deve ser preenchido com exemplos ou resultados especulativos.
+
+Cada objeto de `offers` usa:
+`cardId`, `language`, `variantEnum`, `listingId`, `seller`,
+`condition` (ex.: `NM`), `priceBrl`, `url`, `observedAt` (ISO 8601).
+
+- Só contam observações com até 14 dias e URLs HTTPS da Liga Pokémon.
+- Anúncios repetidos são deduplicados por `listingId`.
+- O preço de referência brasileiro é a **mediana** do anúncio mais barato de
+  cada vendedor distinto, usando apenas cartas `NM` da variante exata.
+- O preço brasileiro só substitui a referência internacional quando houver
+  **ao menos três vendedores independentes**; caso contrário, o preço original
+  permanece e uma amostra disponível fica documentada em `brazilMarket`.
+- Sem anúncios confirmados, o arquivo fica vazio e os preços originais
+  continuam inalterados.
+- GitHub Actions usa esse arquivo no processamento diário já existente.
+  Esse workflow **não coleta anúncios da Liga diretamente** nem burla
+  bloqueios 403. O monitor externo é responsável por alimentar os registros.
+- Valores são **preços pedidos nos anúncios**, não vendas concluídas.
