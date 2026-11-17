@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coletor da Liga</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <h1>POKECARD · Liga</h1>
+    <p class="muted">Edições e versões vêm das páginas normais da Liga. A coleção do POKECARD continua usando os mesmos IDs.</p>
+    <button id="discover" class="secondary">Descobrir versões na Liga</button>
+    <label class="file-label" for="queue">Arquivo da fila de cartas</label>
+    <input id="queue" type="file" accept="application/json,.json">
+    <button id="import">Carregar fila</button>
+    <div class="actions">
+      <button id="start">Iniciar / continuar</button>
+      <button id="pause" class="secondary">Pausar</button>
+    </div>
+    <button id="export" class="secondary">Exportar snapshot</button>
+    <button id="sync" class="secondary">Sincronizar busca concluída</button>
+    <output id="status" aria-live="polite">Aguardando a fila.</output>
+    <p class="note">A descoberta e a leitura rodam numa aba separada em segundo plano; você pode continuar usando outras abas. O progresso fica salvo localmente e capturas anteriores são preservadas ao retomar. Se a Liga pedir verificação, conclua manualmente na aba da coleta e depois retome aqui.</p>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

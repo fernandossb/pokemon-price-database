@@ -39,11 +39,35 @@ if (!files.length) throw new Error('Nenhum resultado de shard encontrado');
 
 const shardMetas = [];
 const outputShardFiles = [];
+let ligaSnapshotId = null;
+let ligaFetchedAtMin = null;
+let ligaFetchedAtMax = null;
+const ligaFetchedAtSources = new Set();
+let ligaOffersCount = 0;
 for (const file of files) {
   const result = await readJson(path.join('work/shards', file), null);
   if (!result?.meta) continue;
   if (Number(result.meta.schemaVersion) !== 4) throw new Error(`Schema antigo em ${file}`);
   if (result.meta.catalogHash !== catalog.hash) throw new Error(`Hash de catálogo divergente em ${file}`);
+  const shardFetchedAtMin = Date.parse(result.meta.ligaFetchedAtMin || '');
+  const shardFetchedAtMax = Date.parse(result.meta.ligaFetchedAtMax || '');
+  const browserSnapshot = (result.meta.ligaFetchedAtSources || []).includes('snapshot-captured-at');
+  const freshnessWindow = browserSnapshot ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  if (result.meta.priceSource !== 'ligapokemon' || !result.meta.ligaSnapshotId ||
+      !Number.isFinite(shardFetchedAtMin) || !Number.isFinite(shardFetchedAtMax) ||
+      shardFetchedAtMin > shardFetchedAtMax || Date.now() - shardFetchedAtMin > freshnessWindow ||
+      result.meta.ligaOffersCount < 0) {
+    throw new Error(`Snapshot live da Liga ausente ou vencido em ${file}`);
+  }
+  if (ligaSnapshotId === null) {
+    ligaSnapshotId = result.meta.ligaSnapshotId;
+  } else if (ligaSnapshotId !== result.meta.ligaSnapshotId) {
+    throw new Error('Os shards pertencem a execuções diferentes da Liga Pokémon.');
+  }
+  ligaFetchedAtMin = ligaFetchedAtMin === null ? shardFetchedAtMin : Math.min(ligaFetchedAtMin, shardFetchedAtMin);
+  ligaFetchedAtMax = ligaFetchedAtMax === null ? shardFetchedAtMax : Math.max(ligaFetchedAtMax, shardFetchedAtMax);
+  for (const source of result.meta.ligaFetchedAtSources || []) ligaFetchedAtSources.add(source);
+  ligaOffersCount += Number(result.meta.ligaOffersCount) || 0;
 
   shardMetas.push(result.meta);
   const shardIndex = Number(result.meta.shardIndex);
@@ -75,6 +99,12 @@ for (const file of files) {
       shardCount: Number(result.meta.shardCount) || SHARD_COUNT,
       catalogHash: catalog.hash,
       generatedAt: result.meta.generatedAt || nowIso(),
+      priceSource: 'ligapokemon',
+      ligaSnapshotId: result.meta.ligaSnapshotId,
+      ligaFetchedAtMin: result.meta.ligaFetchedAtMin,
+      ligaFetchedAtMax: result.meta.ligaFetchedAtMax,
+      ligaFetchedAtSources: result.meta.ligaFetchedAtSources || [],
+      ligaOffersCount: result.meta.ligaOffersCount,
       variantsDiscovered: Object.values(shardVariantCatalog).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0),
       variantsPriced: Object.keys(shardPrices).length,
     },
@@ -134,6 +164,12 @@ const meta = {
   unmatched: unmatched.length,
   changedPrices: Object.keys(changes).length,
   workers: shardMetas,
+  priceSource: 'ligapokemon',
+  ligaSnapshotId,
+  ligaFetchedAtMin: ligaFetchedAtMin === null ? null : new Date(ligaFetchedAtMin).toISOString(),
+  ligaFetchedAtMax: ligaFetchedAtMax === null ? null : new Date(ligaFetchedAtMax).toISOString(),
+  ligaFetchedAtSources: [...ligaFetchedAtSources].sort(),
+  ligaOffersCount,
 };
 
 await fs.writeFile('output/card-shard-index.json', JSON.stringify(indexPayload));

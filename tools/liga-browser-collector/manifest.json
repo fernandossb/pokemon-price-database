@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "POKECARD · Coletor da Liga",
+  "version": "0.2.0",
+  "description": "Coleta versões e preços da Liga, envia snapshots ao Pokémon Price Database e retoma erros de carregamento automaticamente.",
+  "permissions": ["alarms", "webNavigation"],
+  "host_permissions": [
+    "https://www.ligapokemon.com.br/*",
+    "https://ligapokemon.com.br/*",
+    "http://127.0.0.1:17835/*"
+  ],
+  "action": { "default_popup": "popup.html", "default_title": "Coletar preços da Liga" },
+  "background": { "service_worker": "worker.js", "type": "module" },
+  "content_scripts": [{
+    "matches": ["https://www.ligapokemon.com.br/*", "https://ligapokemon.com.br/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }]
+}

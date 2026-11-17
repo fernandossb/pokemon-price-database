@@ -1,0 +1,14 @@
+:root { color-scheme: light; font: 14px/1.4 system-ui, sans-serif; }
+body { width: 330px; margin: 0; background: #f5f7fa; color: #182230; }
+main { padding: 16px; display: grid; gap: 10px; }
+h1 { margin: 0; font-size: 18px; }
+p { margin: 0; }
+.muted, .note { color: #526173; font-size: 12px; }
+.note { border-top: 1px solid #d7dee8; padding-top: 10px; }
+.file-label { font-weight: 600; }
+input { width: 100%; font-size: 12px; }
+button { border: 0; border-radius: 8px; padding: 9px 12px; background: #1769e0; color: white; font-weight: 650; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+.secondary { background: #e3e9f2; color: #182230; }
+.actions { display: grid; grid-template-columns: 1.5fr 1fr; gap: 8px; }
+output { min-height: 36px; padding: 8px; border-radius: 7px; background: white; white-space: pre-wrap; overflow-wrap: anywhere; }

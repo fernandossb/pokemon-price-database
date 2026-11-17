@@ -5,12 +5,19 @@
   "type": "module",
   "scripts": {
     "catalog": "node scripts/build-catalog.mjs",
+    "liga:preflight": "node scripts/preflight-liga.mjs",
+    "liga:pilot": "node scripts/pilot-liga.mjs",
+    "liga:snapshot": "node scripts/liga-snapshot-info.mjs",
+    "liga:import-snapshot": "node scripts/import-liga-snapshot.mjs",
+    "liga:browser-queue": "node scripts/prepare-liga-browser-queue.mjs",
+    "liga:import-versions": "node scripts/import-liga-version-index.mjs",
+    "liga:import-browser": "node scripts/import-liga-browser-capture.mjs",
+    "liga:sync-server": "node scripts/liga-sync-server.mjs",
     "shard": "node scripts/process-shard.mjs",
     "consolidate": "node scripts/consolidate.mjs",
     "validate": "node scripts/validate-output.mjs",
     "deck-rules": "node scripts/build-deck-rules.mjs",
-    "test": "node scripts/test-variants.mjs && node scripts/test-liga.mjs",
-    "tcgplayer": "node scripts/build-tcgplayer-prices.mjs"
+    "test": "node scripts/test-variants.mjs && node scripts/test-liga.mjs"
   },
   "engines": {
     "node": ">=20"

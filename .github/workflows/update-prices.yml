@@ -1,78 +1,23 @@
-name: Atualizar tabela de preços em paralelo
+name: Atualizar preços pelos anúncios da Liga
 
 on:
   workflow_dispatch:
-  schedule:
-    # 06:00 UTC = 03:00 no horário de Brasília.
-    - cron: '0 6 * * *'
+  push:
+    branches: [main]
+    paths:
+      - data/ligapokemon-offers.json
 
 permissions:
   contents: write
-
-env:
-  SHARD_COUNT: 12
 
 concurrency:
   group: pokemon-price-database-update
   cancel-in-progress: false
 
 jobs:
-  catalog:
+  update:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Testar separação das variações
-        run: npm test
-      - name: Gerar catálogo consolidado
-        run: npm run catalog
-      # Preços do TCGplayer por produto (tcgcsv.com), para as versões com foil
-      # especial (Cosmos Holo, Poké Ball...). Falhando, segue sem eles.
-      - name: Baixar preços do TCGplayer por produto
-        run: npm run tcgplayer
-      - uses: actions/upload-artifact@v4
-        with:
-          name: catalog
-          path: |
-            work/catalog.json
-            work/tcgplayer-products.json
-          retention-days: 2
-
-  prices:
-    needs: catalog
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      max-parallel: 12
-      matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - uses: actions/download-artifact@v4
-        with:
-          name: catalog
-          path: work
-      - name: Processar lote ${{ matrix.shard }}
-        env:
-          SHARD_INDEX: ${{ matrix.shard }}
-        run: npm run shard
-      - uses: actions/upload-artifact@v4
-        with:
-          name: shard-${{ matrix.shard }}
-          path: work/shards/*.json
-          retention-days: 2
-
-  consolidate:
-    needs: [catalog, prices]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -80,23 +25,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - uses: actions/download-artifact@v4
-        with:
-          name: catalog
-          path: work
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: shard-*
-          path: work/shards
-          merge-multiple: true
-      - name: Consolidar resultados e histórico
-        run: npm run consolidate
-      - name: Validar banco final
+      - name: Gerar os IDs de cartas e idiomas do aplicativo
+        run: npm run catalog
+      - name: Importar edições e numeração observadas na Liga
+        run: npm run liga:import-versions -- data/ligapokemon-edition-index.json
+      - name: Processar somente o snapshot de anúncios da Liga
+        run: npm run liga:import-snapshot
+      - name: Validar proveniência, cobertura e preços
         run: npm run validate
-      - name: Publicar banco atualizado
+      - name: Publicar dados validados
         run: |
           git config user.name "pokemon-price-bot"
           git config user.email "actions@users.noreply.github.com"
           git add output/ cache/shards/ history/
-          git diff --cached --quiet || git commit -m "Atualizar preços $(date -u +%F)"
+          git diff --cached --quiet || git commit -m "Atualizar preços Liga Pokémon $(date -u +%F)"
           git push

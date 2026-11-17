@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Liga Pokémon seller offer snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "source", "capturedAt", "coverage", "offers"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "source": { "const": "ligapokemon" },
+    "capturedAt": { "type": "string", "format": "date-time" },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["catalogHash", "cardCount", "complete"],
+      "properties": {
+        "catalogHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "cardCount": { "type": "integer", "minimum": 1 },
+        "complete": { "const": true }
+      }
+    },
+    "offers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["cardId", "language", "variantEnum", "listingId", "seller", "condition", "priceBrl", "url", "observedAt"],
+        "properties": {
+          "cardId": { "type": "string", "pattern": "^[a-zA-Z0-9_.-]+$" },
+          "language": { "enum": ["pt-br", "en", "ja"] },
+          "variantEnum": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "listingId": { "type": "string", "minLength": 1, "maxLength": 180 },
+          "seller": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "sellerId": { "type": "string" },
+          "condition": { "type": "string", "minLength": 1 },
+          "priceBrl": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000000 },
+          "url": { "type": "string", "format": "uri", "pattern": "^https://([^/]+\\.)?ligapokemon\\.com\\.br/" },
+          "observedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}
