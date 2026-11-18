@@ -1,7 +1,11 @@
 const DB_NAME = 'pokecard-liga-browser-collector';
 const DB_VERSION = 2;
-const PAGE_DELAY_MS = 1200;
-const PAGE_RETRY_DELAY_MS = 20_000;
+// Conservative pacing for a long public-site crawl: at most two new pages/minute.
+const PAGE_DELAY_MS = 30_000;
+const PAGE_RETRY_DELAY_MS = 60_000;
+const MAX_PAGE_RETRIES = 6;
+const MAX_RETRY_DELAY_MS = 30 * 60_000;
+const MAX_RETRY_AFTER_MS = 30 * 24 * 60 * 60_000;
 const PAGE_RETRY_ALARM = 'liga-page-retry';
 const EDITIONS_URL = 'https://www.ligapokemon.com.br/?view=cards/edicoes';
 const EDITION_SYNC_URL = 'http://127.0.0.1:17835/sync/editions';
@@ -74,6 +78,9 @@ async function setStatus(status, reason = '') {
   job.status = status;
   job.reason = reason;
   job.inFlight = false;
+  job.retryAt = 0;
+  job.retryUrl = '';
+  await chrome.alarms.clear(PAGE_RETRY_ALARM);
   await saveJob(job);
   await chrome.action.setBadgeText({ text: status === 'paused' ? '!' : '' });
   if (status === 'paused') await chrome.action.setBadgeBackgroundColor({ color: '#b42318' });
@@ -83,6 +90,21 @@ async function setStatus(status, reason = '') {
 function pageLoadError(error) {
   const message = String(error?.message || error || '').toLowerCase();
   return /receiving end does not exist|could not establish connection|net::err_|navigation failed|tab crashed|frame was removed/.test(message);
+}
+
+function retryAfterDelay(responseHeaders = []) {
+  const raw = responseHeaders.find(header => header.name?.toLowerCase() === 'retry-after')?.value?.trim();
+  if (!raw) return null;
+  if (/^\d+(?:\.\d+)?$/.test(raw)) return Math.ceil(Number(raw) * 1000);
+  const timestamp = Date.parse(raw);
+  return Number.isFinite(timestamp) ? Math.max(0, timestamp - Date.now()) : null;
+}
+
+function retryWaitLabel(milliseconds) {
+  const minutes = Math.max(1, Math.ceil(milliseconds / 60_000));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.ceil(minutes / 60);
+  return `${hours} h`;
 }
 
 function currentPageUrl(job) {
@@ -132,7 +154,7 @@ async function installAndStartQueue(queue, tabId) {
   const db = await openDb();
   const job = {
     mode: 'card-prices', queue, status: 'running', index: 0, tabId,
-    inFlight: false, reason: 'Versões salvas no Price Database; iniciando a leitura de preços.', importedAt: new Date().toISOString(),
+    inFlight: false, retryCount: 0, reason: 'Versões salvas no Price Database; iniciando a leitura de preços.', importedAt: new Date().toISOString(),
   };
   await new Promise((resolve, reject) => {
     const tx = db.transaction(['state', 'cards', 'editions'], 'readwrite');
@@ -195,27 +217,39 @@ async function retryFailedPage() {
   job.retryAt = 0;
   job.retryUrl = '';
   job.inFlight = true;
-  job.reason = 'Recarregando a página da Liga após 20 segundos.';
+  job.reason = 'Nova tentativa da página da Liga após o intervalo de espera.';
   await saveJob(job);
   await chrome.alarms.clear(PAGE_RETRY_ALARM);
   try {
     await chrome.tabs.update(job.tabId, { url });
   } catch (error) {
     job.inFlight = false;
-    job.reason = `Falha ao reabrir a página da Liga: ${error.message}`;
     await saveJob(job);
+    await schedulePageRetry(job, url, error);
   }
 }
 
-async function schedulePageRetry(job, url, error) {
+async function schedulePageRetry(job, url, error, requestedDelayMs = null) {
   if (!job || job.status !== 'running' || job.retryAt) return;
+  const retryCount = (Number(job.retryCount) || 0) + 1;
+  if (retryCount > MAX_PAGE_RETRIES) {
+    await setStatus('paused', `Parei após ${MAX_PAGE_RETRIES} falhas seguidas ao carregar a Liga. Confira a conexão e retome manualmente mais tarde.`);
+    return;
+  }
+  const backoff = Math.min(PAGE_RETRY_DELAY_MS * (2 ** (retryCount - 1)), MAX_RETRY_DELAY_MS);
+  const delay = requestedDelayMs == null ? backoff : Math.max(PAGE_DELAY_MS, requestedDelayMs);
+  if (!Number.isFinite(delay) || delay < 0 || delay > MAX_RETRY_AFTER_MS) {
+    await setStatus('paused', 'A Liga pediu uma espera longa demais para retomar automaticamente. A coleta foi pausada para proteger este IP.');
+    return;
+  }
   job.inFlight = false;
-  job.retryAt = Date.now() + PAGE_RETRY_DELAY_MS;
+  job.retryCount = retryCount;
+  job.retryAt = Date.now() + delay;
   job.retryUrl = url || currentPageUrl(job);
-  job.reason = `Falha ao carregar a página da Liga; nova tentativa em 20 segundos. ${String(error?.message || error || '').slice(0, 160)}`;
+  job.reason = `Falha ao carregar a página da Liga; tentativa ${retryCount}/${MAX_PAGE_RETRIES} em ${retryWaitLabel(delay)}. ${String(error?.message || error || '').slice(0, 160)}`;
   await saveJob(job);
   await chrome.alarms.create(PAGE_RETRY_ALARM, { when: job.retryAt });
-  setTimeout(() => void retryFailedPage(), PAGE_RETRY_DELAY_MS);
+  setTimeout(() => void retryFailedPage(), delay);
 }
 
 async function capturePriceSnapshot(job) {
@@ -349,7 +383,7 @@ async function captureLoadedPage(tabId) {
 
       job = {
         mode: 'edition-discovery', editions: index.editions, status: 'running',
-        index: index.editions.findIndex(item => !retainedIds.has(String(item.editionId))),
+        index: index.editions.findIndex(item => !retainedIds.has(String(item.editionId))), retryCount: 0,
         tabId, inFlight: false, reason: '', startedAt: job.startedAt || new Date().toISOString(),
       };
       if (job.index < 0) {
@@ -379,6 +413,10 @@ async function captureLoadedPage(tabId) {
         return;
       }
       if (!result?.ok) {
+        if (result?.reason === 'challenge_or_interstitial') {
+          await setStatus('paused', 'A Liga/Cloudflare apresentou uma verificação. Parei a coleta; resolva-a manualmente e retome depois.');
+          return;
+        }
         const details = result?.reason === 'edition_list_incomplete'
           ? ` (esperadas ${result.expectedCount}, itens carregados ${result.cardItemCount}, versões lidas ${result.capturedCount}, botão Mostrar mais ${result.loadMorePresent ? (result.loadMoreVisible ? 'visível' : 'presente, porém oculto') : 'ausente'}, espera ${Math.round((result.waitedMs || 0) / 1000)}s)`
           : '';
@@ -390,6 +428,7 @@ async function captureLoadedPage(tabId) {
       if (!job || job.status !== 'running' || job.index >= job.editions.length) return;
       job.index += 1;
       job.inFlight = false;
+      job.retryCount = 0;
       job.reason = '';
       if (job.index >= job.editions.length) job.status = 'complete';
       await saveJob(job);
@@ -412,6 +451,10 @@ async function captureLoadedPage(tabId) {
       return;
     }
     if (!result?.ok) {
+      if (result?.reason === 'challenge_or_interstitial') {
+        await setStatus('paused', 'A Liga/Cloudflare apresentou uma verificação. Parei a coleta; resolva-a manualmente e retome depois.');
+        return;
+      }
       const details = result?.reason === 'unparsed_rows'
         ? ` (${result.issues?.length || 0} linhas com dados incompletos; faltando: ${(result.issues?.[0]?.missing || []).join(', ') || 'campo não identificado'})`
         : '';
@@ -429,6 +472,7 @@ async function captureLoadedPage(tabId) {
     if (!job || job.status !== 'running' || job.index >= job.queue.cards.length) return;
     job.index += 1;
     job.inFlight = false;
+    job.retryCount = 0;
     job.reason = '';
     if (job.index >= job.queue.cards.length) job.status = 'complete';
     await saveJob(job);
@@ -459,6 +503,30 @@ chrome.webNavigation.onErrorOccurred.addListener(details => {
   })();
 });
 
+// Observe only top-level Liga responses. Honor an explicit Retry-After for
+// HTTP 429; stop on access denial or Cloudflare challenges rather than retrying.
+chrome.webRequest.onHeadersReceived.addListener(details => {
+  if (details.frameId !== 0 || details.type !== 'main_frame') return;
+  const headers = details.responseHeaders || [];
+  const cloudflareChallenge = headers.some(header =>
+    header.name?.toLowerCase() === 'cf-mitigated' && header.value?.toLowerCase() === 'challenge');
+  if (!cloudflareChallenge && details.statusCode !== 403 && details.statusCode !== 429) return;
+  void (async () => {
+    const job = await getJob();
+    if (!job || job.status !== 'running' || job.tabId !== details.tabId) return;
+    if (cloudflareChallenge || details.statusCode === 403) {
+      await setStatus('paused', 'A Liga/Cloudflare apresentou um desafio ou negou o acesso. Parei sem tentar contornar; retome só depois que o acesso normal voltar.');
+      return;
+    }
+    const retryAfter = retryAfterDelay(headers);
+    if (retryAfter == null) {
+      await setStatus('paused', 'A Liga respondeu HTTP 429 sem informar Retry-After. Pausei a coleta para proteger este IP; não vou insistir automaticamente.');
+      return;
+    }
+    await schedulePageRetry(job, details.url, new Error(`HTTP 429; Retry-After ${retryWaitLabel(retryAfter)}.`), retryAfter);
+  })();
+}, { urls: ['https://www.ligapokemon.com.br/*', 'https://ligapokemon.com.br/*'], types: ['main_frame'] }, ['responseHeaders']);
+
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === PAGE_RETRY_ALARM) void retryFailedPage();
 });
@@ -488,6 +556,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         tx.objectStore('state').put({
           key: 'job', queue, status: 'ready', index: 0, tabId: null,
           inFlight: false, reason: '', importedAt: new Date().toISOString(),
+          retryCount: 0,
         });
         tx.oncomplete = resolve;
         tx.onerror = () => reject(tx.error);
@@ -509,6 +578,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           existingJob.tabId = backgroundTabId;
           existingJob.inFlight = false;
           existingJob.reason = '';
+          existingJob.retryCount = 0;
           existingJob.retryAt = 0;
           existingJob.retryUrl = '';
           await chrome.alarms.clear(PAGE_RETRY_ALARM);
@@ -549,6 +619,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       job.status = 'running';
       job.reason = '';
       job.inFlight = false;
+      job.retryCount = 0;
       job.retryAt = 0;
       job.retryUrl = '';
       await chrome.alarms.clear(PAGE_RETRY_ALARM);

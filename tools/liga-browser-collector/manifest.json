@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "POKECARD · Coletor da Liga",
-  "version": "0.2.0",
-  "description": "Coleta versões e preços da Liga, envia snapshots ao Pokémon Price Database e retoma erros de carregamento automaticamente.",
-  "permissions": ["alarms", "webNavigation"],
+  "version": "0.2.1",
+  "description": "Coleta com ritmo conservador, respeita Retry-After e pausa em desafios ou bloqueios da Liga.",
+  "permissions": ["alarms", "webNavigation", "webRequest"],
   "host_permissions": [
     "https://www.ligapokemon.com.br/*",
     "https://ligapokemon.com.br/*",

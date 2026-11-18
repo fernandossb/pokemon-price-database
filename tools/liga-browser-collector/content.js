@@ -4,6 +4,12 @@ function normalizeText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
+function isProtectionOrRateLimitPage() {
+  const pageText = `${document.title} ${document.body?.innerText?.slice(0, 1600) || ''}`
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return /cloudflare|captcha|just a moment|checking your browser|verify you are human|verifique.{0,30}humano|access denied|acesso negado|too many requests|muitas requisicoes|rate limit|429|request blocked|acesso temporariamente bloqueado/.test(pageText);
+}
+
 function visible(element) {
   if (!element) return false;
   const style = getComputedStyle(element);
@@ -148,8 +154,7 @@ function captureEditionIndex() {
   if (new URLSearchParams(location.search).get('view') !== 'cards/edicoes') {
     return { ok: false, reason: 'open_liga_editions_page' };
   }
-  const pageText = `${document.title} ${document.body?.innerText?.slice(0, 1200) || ''}`.toLowerCase();
-  if (/just a moment|captcha|verifique se voce|cloudflare/.test(pageText)) {
+  if (isProtectionOrRateLimitPage()) {
     return { ok: false, reason: 'challenge_or_interstitial' };
   }
   const editions = [...document.querySelectorAll('a[href*="edid="]')]
@@ -169,8 +174,7 @@ async function captureSetVersions(edition) {
   if (!current || current[1] !== String(edition.editionId) || current[2].toUpperCase() !== String(edition.code).toUpperCase()) {
     return { ok: false, reason: 'edition_mismatch', currentUrl: location.href };
   }
-  const title = `${document.title} ${document.body?.innerText?.slice(0, 1200) || ''}`.toLowerCase();
-  if (/just a moment|captcha|verifique se voce|cloudflare/.test(title)) {
+  if (isProtectionOrRateLimitPage()) {
     return { ok: false, reason: 'challenge_or_interstitial' };
   }
 
@@ -324,8 +328,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     const card = message.card;
     const params = new URLSearchParams(location.search);
-    const title = `${document.title} ${document.body?.innerText?.slice(0, 1200) || ''}`.toLowerCase();
-    if (/just a moment|captcha|verifique se voce|cloudflare/.test(title)) {
+    if (isProtectionOrRateLimitPage()) {
       return { ok: false, reason: 'challenge_or_interstitial' };
     }
     if (params.get('ed')?.toUpperCase() !== String(card.edition).toUpperCase()
