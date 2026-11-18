@@ -7,6 +7,7 @@ const MAX_PAGE_RETRIES = 6;
 const MAX_RETRY_DELAY_MS = 30 * 60_000;
 const MAX_RETRY_AFTER_MS = 30 * 24 * 60 * 60_000;
 const PAGE_RETRY_ALARM = 'liga-page-retry';
+const NEXT_PAGE_ALARM = 'liga-next-page';
 const EDITIONS_URL = 'https://www.ligapokemon.com.br/?view=cards/edicoes';
 const EDITION_SYNC_URL = 'http://127.0.0.1:17835/sync/editions';
 const PRICE_SYNC_URL = 'http://127.0.0.1:17835/sync/prices';
@@ -81,6 +82,7 @@ async function setStatus(status, reason = '') {
   job.retryAt = 0;
   job.retryUrl = '';
   await chrome.alarms.clear(PAGE_RETRY_ALARM);
+  await chrome.alarms.clear(NEXT_PAGE_ALARM);
   await saveJob(job);
   await chrome.action.setBadgeText({ text: status === 'paused' ? '!' : '' });
   if (status === 'paused') await chrome.action.setBadgeBackgroundColor({ color: '#b42318' });
@@ -105,6 +107,10 @@ function retryWaitLabel(milliseconds) {
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.ceil(minutes / 60);
   return `${hours} h`;
+}
+
+async function scheduleNextPage() {
+  await chrome.alarms.create(NEXT_PAGE_ALARM, { when: Date.now() + PAGE_DELAY_MS });
 }
 
 function currentPageUrl(job) {
@@ -209,11 +215,12 @@ async function retryFailedPage() {
   if (!job || job.status !== 'running' || job.inFlight || !job.retryAt) return;
   const remaining = job.retryAt - Date.now();
   if (remaining > 0) {
-    setTimeout(() => void retryFailedPage(), remaining);
+    await chrome.alarms.create(PAGE_RETRY_ALARM, { when: job.retryAt });
     return;
   }
   const url = job.retryUrl || currentPageUrl(job);
   if (!url || !job.tabId) return;
+  await chrome.alarms.clear(NEXT_PAGE_ALARM);
   job.retryAt = 0;
   job.retryUrl = '';
   job.inFlight = true;
@@ -248,8 +255,8 @@ async function schedulePageRetry(job, url, error, requestedDelayMs = null) {
   job.retryUrl = url || currentPageUrl(job);
   job.reason = `Falha ao carregar a página da Liga; tentativa ${retryCount}/${MAX_PAGE_RETRIES} em ${retryWaitLabel(delay)}. ${String(error?.message || error || '').slice(0, 160)}`;
   await saveJob(job);
+  await chrome.alarms.clear(NEXT_PAGE_ALARM);
   await chrome.alarms.create(PAGE_RETRY_ALARM, { when: job.retryAt });
-  setTimeout(() => void retryFailedPage(), delay);
 }
 
 async function capturePriceSnapshot(job) {
@@ -308,6 +315,7 @@ async function navigateToCurrent(job) {
   job.retryAt = 0;
   job.retryUrl = '';
   await chrome.alarms.clear(PAGE_RETRY_ALARM);
+  await chrome.alarms.clear(NEXT_PAGE_ALARM);
   if (job.mode === 'edition-index') {
     job.inFlight = true;
     await saveJob(job);
@@ -392,10 +400,7 @@ async function captureLoadedPage(tabId) {
       }
       await saveJob(job);
       if (job.status === 'running') {
-        setTimeout(async () => {
-          const next = await getJob();
-          if (next?.status === 'running' && !next.inFlight) await navigateToCurrent(next);
-        }, PAGE_DELAY_MS);
+        await scheduleNextPage();
       } else if (job.status === 'complete') {
         void syncCompletedSearch(job);
       }
@@ -433,10 +438,7 @@ async function captureLoadedPage(tabId) {
       if (job.index >= job.editions.length) job.status = 'complete';
       await saveJob(job);
       if (job.status === 'running') {
-        setTimeout(async () => {
-          const next = await getJob();
-          if (next?.status === 'running' && !next.inFlight) await navigateToCurrent(next);
-        }, PAGE_DELAY_MS);
+        await scheduleNextPage();
       } else if (job.status === 'complete') void syncCompletedSearch(job);
       return;
     }
@@ -477,10 +479,7 @@ async function captureLoadedPage(tabId) {
     if (job.index >= job.queue.cards.length) job.status = 'complete';
     await saveJob(job);
     if (job.status === 'running') {
-      setTimeout(async () => {
-        const next = await getJob();
-        if (next?.status === 'running' && !next.inFlight) await navigateToCurrent(next);
-      }, PAGE_DELAY_MS);
+      await scheduleNextPage();
     } else if (job.status === 'complete') {
       void syncCompletedSearch(job);
     }
@@ -529,6 +528,12 @@ chrome.webRequest.onHeadersReceived.addListener(details => {
 
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === PAGE_RETRY_ALARM) void retryFailedPage();
+  if (alarm.name === NEXT_PAGE_ALARM) {
+    void (async () => {
+      const job = await getJob();
+      if (job?.status === 'running' && !job.inFlight && !job.retryAt) await navigateToCurrent(job);
+    })();
+  }
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -582,6 +587,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           existingJob.retryAt = 0;
           existingJob.retryUrl = '';
           await chrome.alarms.clear(PAGE_RETRY_ALARM);
+          await chrome.alarms.clear(NEXT_PAGE_ALARM);
           await saveJob(existingJob);
           await navigateToCurrent(existingJob);
           await closeOldScannerTab(oldTabId, backgroundTabId, message.tabId);
@@ -623,6 +629,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       job.retryAt = 0;
       job.retryUrl = '';
       await chrome.alarms.clear(PAGE_RETRY_ALARM);
+      await chrome.alarms.clear(NEXT_PAGE_ALARM);
       await saveJob(job);
       await navigateToCurrent(job);
       await closeOldScannerTab(oldTabId, job.tabId, message.tabId);

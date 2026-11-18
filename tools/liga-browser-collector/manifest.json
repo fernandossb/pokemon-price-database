@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "POKECARD · Coletor da Liga",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Coleta com ritmo conservador, respeita Retry-After e pausa em desafios ou bloqueios da Liga.",
   "permissions": ["alarms", "webNavigation", "webRequest"],
   "host_permissions": [
