@@ -1,7 +1,8 @@
 const DB_NAME = 'pokecard-liga-browser-collector';
 const DB_VERSION = 2;
-// Conservative pacing for a long public-site crawl: at most two new pages/minute.
-const PAGE_DELAY_MS = 30_000;
+// Randomized pacing: wait 20–40 seconds between successfully captured pages.
+const MIN_PAGE_DELAY_MS = 20_000;
+const MAX_PAGE_DELAY_MS = 40_000;
 const PAGE_RETRY_DELAY_MS = 60_000;
 const MAX_PAGE_RETRIES = 6;
 const MAX_RETRY_DELAY_MS = 30 * 60_000;
@@ -110,7 +111,8 @@ function retryWaitLabel(milliseconds) {
 }
 
 async function scheduleNextPage() {
-  await chrome.alarms.create(NEXT_PAGE_ALARM, { when: Date.now() + PAGE_DELAY_MS });
+  const delay = MIN_PAGE_DELAY_MS + Math.floor(Math.random() * (MAX_PAGE_DELAY_MS - MIN_PAGE_DELAY_MS + 1));
+  await chrome.alarms.create(NEXT_PAGE_ALARM, { when: Date.now() + delay });
 }
 
 function currentPageUrl(job) {
@@ -244,7 +246,7 @@ async function schedulePageRetry(job, url, error, requestedDelayMs = null) {
     return;
   }
   const backoff = Math.min(PAGE_RETRY_DELAY_MS * (2 ** (retryCount - 1)), MAX_RETRY_DELAY_MS);
-  const delay = requestedDelayMs == null ? backoff : Math.max(PAGE_DELAY_MS, requestedDelayMs);
+  const delay = requestedDelayMs == null ? backoff : Math.max(MIN_PAGE_DELAY_MS, requestedDelayMs);
   if (!Number.isFinite(delay) || delay < 0 || delay > MAX_RETRY_AFTER_MS) {
     await setStatus('paused', 'A Liga pediu uma espera longa demais para retomar automaticamente. A coleta foi pausada para proteger este IP.');
     return;
