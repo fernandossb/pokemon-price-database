@@ -86,9 +86,15 @@ function send(response, status, value) {
   response.end(body);
 }
 
-function allowedOrigin(origin) {
-  const normalized = String(origin || '').trim().replace(/\/+$/, '');
-  return /^chrome-extension:\/\/[a-p]{32}$/.test(normalized);
+function extensionOrigin(origin) {
+  try {
+    const parsed = new URL(String(origin || '').trim());
+    if (parsed.protocol !== 'chrome-extension:' || !/^[a-p]{32}$/i.test(parsed.hostname)
+      || parsed.username || parsed.password || parsed.port) return null;
+    return `chrome-extension://${parsed.hostname.toLowerCase()}`;
+  } catch {
+    return null;
+  }
 }
 
 function readBody(request) {
@@ -247,8 +253,9 @@ async function receivePriceCheckpoint(checkpoint) {
 
 const server = http.createServer(async (request, response) => {
   const origin = String(request.headers.origin || '');
-  if (allowedOrigin(origin)) {
-    response.setHeader('access-control-allow-origin', origin);
+  const allowedExtensionOrigin = extensionOrigin(origin);
+  if (allowedExtensionOrigin) {
+    response.setHeader('access-control-allow-origin', allowedExtensionOrigin);
     response.setHeader('vary', 'Origin');
     response.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
     response.setHeader('access-control-allow-headers', 'content-type');
@@ -268,8 +275,8 @@ const server = http.createServer(async (request, response) => {
     return;
   }
   if (request.method === 'GET' && request.url === '/sync/resume') {
-    if (!allowedOrigin(origin)) {
-      send(response, 403, { ok: false, error: 'Origem não autorizada para o coletor POKECARD.' });
+    if (!allowedExtensionOrigin) {
+      send(response, 403, { ok: false, error: `Origem não autorizada para o coletor POKECARD (recebida: ${origin || 'vazia'}).` });
       return;
     }
     if (syncLock) {
@@ -284,8 +291,8 @@ const server = http.createServer(async (request, response) => {
     send(response, 404, { ok: false, error: 'Rota não encontrada.' });
     return;
   }
-  if (!allowedOrigin(origin)) {
-    send(response, 403, { ok: false, error: 'Origem não autorizada para o coletor POKECARD.' });
+  if (!allowedExtensionOrigin) {
+    send(response, 403, { ok: false, error: `Origem não autorizada para o coletor POKECARD (recebida: ${origin || 'vazia'}).` });
     return;
   }
   if (syncLock) {
