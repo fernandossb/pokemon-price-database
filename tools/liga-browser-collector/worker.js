@@ -536,6 +536,19 @@ chrome.alarms.onAlarm.addListener(alarm => {
   }
 });
 
+async function restoreScheduledWork() {
+  const job = await getJob();
+  if (!job || job.status !== 'running') return;
+  if (job.retryAt) {
+    await chrome.alarms.create(PAGE_RETRY_ALARM, { when: Math.max(Date.now(), job.retryAt) });
+  } else if (!job.inFlight) {
+    await scheduleNextPage();
+  }
+}
+
+chrome.runtime.onInstalled.addListener(() => void restoreScheduledWork());
+chrome.runtime.onStartup.addListener(() => void restoreScheduledWork());
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     if (message?.type === 'IMPORT_QUEUE') {
