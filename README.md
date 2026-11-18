@@ -50,7 +50,7 @@ Acabamentos da Liga são relacionados aos enums existentes do app. Se não houve
 
 ## Publicação
 
-A atualização validada é publicada automaticamente quando uma captura completa da Liga é enviada ao repositório. O workflow também pode ser iniciado manualmente em **Actions → Atualizar preços pelos anúncios da Liga → Run workflow**.
+A atualização validada é publicada automaticamente a cada checkpoint de 100 cartas enviado ao repositório e ao concluir a fila. O workflow também pode ser iniciado manualmente em **Actions → Atualizar preços pelos anúncios da Liga → Run workflow**.
 
 
 ## Preços brasileiros da Liga Pokémon
@@ -59,7 +59,7 @@ Os preços são valores pedidos pelos vendedores, não vendas concluídas, e nã
 
 ### Importar um snapshot local de anúncios
 
-O pipeline aceita um snapshot local de **anúncios individuais** no schema [`docs/liga-offer-snapshot-v2.schema.json`](docs/liga-offer-snapshot-v2.schema.json). Cada linha associa o ID já usado pelo aplicativo a um anúncio individual da Liga, com idioma, acabamento, vendedor, condição, valor em BRL, URL da impressão e horário observado. Capturas feitas na interface podem ter até sete dias para comportar a coleta de milhares de impressões. Capturas parciais, inválidas ou vencidas são rejeitadas.
+O pipeline aceita snapshots de **anúncios individuais** no schema [`docs/liga-offer-snapshot-v2.schema.json`](docs/liga-offer-snapshot-v2.schema.json). Cada linha associa o ID já usado pelo aplicativo a um anúncio individual da Liga, com idioma, acabamento, vendedor, condição, valor em BRL, URL da impressão e horário observado. A integração por navegador publica checkpoints durante a coleta e aceita anúncios observados nos últimos 30 dias; registros inválidos são rejeitados.
 
 ### Captura pela página normal da Liga
 
@@ -67,14 +67,14 @@ O coletor local em [`tools/liga-browser-collector`](tools/liga-browser-collector
 
 Para instalar localmente: no Chrome, abra **Extensões → Gerenciar extensões**, ative **Modo do desenvolvedor**, escolha **Carregar sem compactação** e selecione a pasta `tools/liga-browser-collector`. Se a Liga apresentar sua verificação de segurança, conclua-a manualmente na página normal antes de iniciar a coleta.
 
-Fluxo automático: mantenha o serviço local `npm run liga:sync-server` ativo no computador onde o Chrome e a extensão estão instalados. Quando a descoberta das edições terminar, a extensão envia o índice ao serviço; ele atualiza o repositório `pokemon-price-database`, monta e devolve a fila de cartas, e o coletor inicia a leitura dos anúncios. Ao completar as cartas, a extensão envia a captura; o serviço salva `data/ligapokemon-offers.json` e publica no GitHub. O push inicia o GitHub Actions, que processa e publica os preços em `output/status.json` e nos shards. O POKECARD lê `generatedAt` desse status e mostra a data da última atualização.
+Fluxo automático: mantenha o serviço local `npm run liga:sync-server` ativo no computador onde o Chrome e a extensão estão instalados. Quando a descoberta das edições terminar, a extensão envia o índice ao serviço; ele atualiza o repositório `pokemon-price-database`, monta e devolve a fila de cartas, e o coletor inicia a leitura dos anúncios. A cada 100 cartas, a extensão publica um lote e um índice compacto de progresso no GitHub. O GitHub Actions combina os lotes com o snapshot anterior e atualiza `output/status.json` e os shards. Ao concluir a fila, `data/ligapokemon-offers.json` é atualizado como base da próxima coleta. O POKECARD lê `generatedAt` do status e mostra a data da última atualização.
 
 Para iniciar o serviço manualmente: execute `npm run liga:sync-server` na pasta do repositório. O serviço escuta somente em `127.0.0.1`; mantenha o Git configurado com acesso de escrita ao GitHub. A extensão espera um intervalo aleatório de 20 a 40 segundos entre páginas capturadas. Erros transitórios usam espera crescente, limitada a seis tentativas; respostas HTTP 429 respeitam `Retry-After`. Respostas 403, desafios Cloudflare e limites sem prazo informado pausam a coleta sem insistir. A extensão não tenta resolver desafios nem alterar o endereço de rede.
 
 O caminho manual continua disponível: exporte o snapshot completo da extensão e use `npm run liga:import-browser -- <arquivo-exportado>`, `npm run liga:import-snapshot` e `npm run validate`.
 
-A coleta da interface pode levar muitas horas porque visita uma impressão por vez; a extensão salva o progresso localmente e permite pausar/continuar. Ela lê anúncios renderizados na Liga, sem API paga, proxy ou solucionador de desafios. Uma captura pode ter até sete dias para permitir completar a varredura. Para publicar por GitHub Actions, mantenha os dois snapshots em `data/ligapokemon-edition-index.json` e `data/ligapokemon-offers.json`, depois execute **Actions → Atualizar preços pelos anúncios da Liga → Run workflow**. O workflow não usa `REEF_API_KEY` nem fontes de preço alternativas.
+A coleta da interface pode levar vários dias porque visita uma impressão por vez; a extensão salva o progresso localmente e no GitHub a cada 100 cartas. Em outro computador, atualize o repositório local e reinicie `npm run liga:sync-server`; depois abra a extensão e clique em **Retomar checkpoint do GitHub**. Ela carrega a fila e continua na primeira carta ainda não salva. Os lotes ficam em `data/ligapokemon-browser-checkpoints/` e o índice de retomada em `data/ligapokemon-browser-progress.json`. Ela lê anúncios renderizados na Liga, sem API paga, proxy ou solucionador de desafios. Os anúncios usados podem ter até 30 dias para permitir completar a varredura. Para publicar por GitHub Actions, mantenha os snapshots em `data/ligapokemon-edition-index.json`, os checkpoints e `data/ligapokemon-offers.json`, depois execute **Actions → Atualizar preços pelos anúncios da Liga → Run workflow**. O workflow não usa `REEF_API_KEY` nem fontes de preço alternativas.
 
 O resumo do preço é a mediana do menor anúncio M/NM de cada vendedor distinto; com um único vendedor, o valor publicado é o anúncio dele. Ao finalizar localmente, os shards substituem os preços antigos por dados recém-lidos da Liga; variantes sem vínculo aparecem em `output/unmatched-cards.json` e permanecem sem preço.
 
-**Estado dos dados publicados:** uma captura só atualiza os preços depois que a coleta completa é salva e o GitHub Actions termina com sucesso. A data em `output/status.json` (`generatedAt`) identifica o último processamento publicado; o POKECARD a exibe no painel Pokémon Price Database Brasil.
+**Estado dos dados publicados:** cada checkpoint substitui os anúncios das cartas já relidas, mantém anúncios válidos das demais e atualiza o banco pelo GitHub Actions. A data em `output/status.json` (`generatedAt`) identifica o último processamento publicado; o POKECARD a exibe no painel Pokémon Price Database Brasil.

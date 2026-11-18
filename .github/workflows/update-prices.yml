@@ -6,6 +6,8 @@ on:
     branches: [main]
     paths:
       - data/ligapokemon-offers.json
+      - data/ligapokemon-browser-progress.json
+      - data/ligapokemon-browser-checkpoints/**
 
 permissions:
   contents: write
@@ -29,6 +31,8 @@ jobs:
         run: npm run catalog
       - name: Importar edições e numeração observadas na Liga
         run: npm run liga:import-versions -- data/ligapokemon-edition-index.json
+      - name: Preparar preços dos checkpoints acumulados
+        run: node scripts/prepare-liga-browser-checkpoints.mjs
       - name: Processar somente o snapshot de anúncios da Liga
         run: npm run liga:import-snapshot
       - name: Validar proveniência, cobertura e preços
@@ -37,6 +41,6 @@ jobs:
         run: |
           git config user.name "pokemon-price-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add output/ cache/shards/ history/
+          git add output/ cache/shards/ history/ data/ligapokemon-offers.json
           git diff --cached --quiet || git commit -m "Atualizar preços Liga Pokémon $(date -u +%F)"
           git push

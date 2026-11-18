@@ -7,13 +7,20 @@ const outputFile = path.resolve(process.env.LIGA_OFFERS_FILE || 'data/ligapokemo
 const capture = JSON.parse(await fs.readFile(inputFile, 'utf8'));
 const currentCatalog = JSON.parse(await fs.readFile('work/catalog.json', 'utf8'));
 const coverage = capture?.coverage || {};
+const batchCardCount = Number.isInteger(coverage.batchCardCount)
+  ? coverage.batchCardCount : coverage.capturedCardCount;
+let previousSnapshot = null;
+try { previousSnapshot = JSON.parse(await fs.readFile(outputFile, 'utf8')); } catch {}
 if (capture?.schemaVersion !== 1 || capture?.source !== 'ligapokemon-browser-capture'
-  || coverage.complete !== true
+  || typeof coverage.complete !== 'boolean'
   || coverage.catalogHash !== currentCatalog.hash
   || coverage.cardCount !== currentCatalog.count
   || !Array.isArray(capture.cards)
-  || capture.cards.length !== coverage.eligibleCardCount
+  || capture.cards.length !== batchCardCount
+  || batchCardCount > coverage.capturedCardCount
+  || (coverage.complete && coverage.capturedCardCount !== coverage.eligibleCardCount)
   || capture.cards.some(card => card.captured !== true)
+  || coverage.capturedCardCount > coverage.eligibleCardCount
   || !Array.isArray(capture.excluded)
   || capture.excluded.length !== coverage.excludedCardCount
   || capture.excluded.some(item => !['digital_only_tcg_pocket', 'liga_print_unmatched', 'multiple_liga_prints_for_card_id'].includes(item.reason))
@@ -24,7 +31,9 @@ if (capture?.schemaVersion !== 1 || capture?.source !== 'ligapokemon-browser-cap
 const observedAt = new Date().toISOString();
 const offers = [];
 const errors = [];
-const pendingMappings = [];
+const refreshedCardIds = new Set(capture.cards.map(card => String(card.cardId)));
+const pendingMappings = (previousSnapshot?.pendingMappings || [])
+  .filter(item => !refreshedCardIds.has(String(item.cardId)));
 for (const card of capture.cards) {
   const byLanguage = new Map();
   for (const { language, value } of card.availableEnums || []) {
@@ -32,6 +41,8 @@ for (const card of capture.cards) {
     byLanguage.get(language).push({ value });
   }
   for (const raw of card.offers || []) {
+    const observedMs = Date.parse(String(raw.observedAt || ''));
+    if (Number.isFinite(observedMs) && observedMs < Date.now() - MAX_BROWSER_SNAPSHOT_AGE_MS) continue;
     const languages = offerLanguages(raw);
     if (!languages.length) {
       pendingMappings.push({ cardId: card.cardId, listingId: raw.listingId, reason: 'liga_language_unmapped', value: raw.language || '' });
@@ -74,7 +85,16 @@ for (const card of capture.cards) {
 if (errors.length) {
   throw new Error(`Captura não convertida: ${errors.length} anúncios precisam de correspondência exata. Primeiro: ${errors.slice(0, 5).join(' | ')}`);
 }
-if (!offers.length) throw new Error('A captura completa não contém anúncios válidos; arquivo existente preservado.');
+
+// A cada checkpoint, substitua somente as cartas que já foram relidas. Para as
+// demais, mantenha anúncios ainda válidos do snapshot publicado anteriormente.
+const previousOffers = previousSnapshot?.schemaVersion === 2
+  && previousSnapshot?.source === 'ligapokemon' && Array.isArray(previousSnapshot.offers)
+  ? previousSnapshot.offers : [];
+const retainedOffers = previousOffers.filter(raw => !refreshedCardIds.has(String(raw.cardId)))
+  .map(raw => normalizeLigaOffer(raw, Date.now(), MAX_BROWSER_SNAPSHOT_AGE_MS))
+  .filter(Boolean);
+const mergedOffers = [...retainedOffers, ...offers];
 
 const snapshot = {
   schemaVersion: 2,
@@ -83,11 +103,15 @@ const snapshot = {
   coverage: {
     catalogHash: currentCatalog.hash,
     cardCount: currentCatalog.count,
+    eligibleCardCount: coverage.eligibleCardCount,
+    capturedCardCount: coverage.capturedCardCount,
+    batchCardCount,
     complete: true,
+    crawlComplete: coverage.complete,
     pendingVariantMappings: pendingMappings.length,
   },
   pendingMappings,
-  offers,
+  offers: mergedOffers,
 };
 const temporary = `${outputFile}.tmp`;
 await fs.mkdir(path.dirname(outputFile), { recursive: true });
@@ -97,7 +121,9 @@ console.log(JSON.stringify({
   snapshotFile: path.relative(process.cwd(), outputFile),
   catalogCards: currentCatalog.count,
   eligibleCards: coverage.eligibleCardCount,
+  capturedCards: coverage.capturedCardCount,
+  crawlComplete: coverage.complete,
   excludedCards: coverage.excludedCardCount,
-  listingRows: offers.length,
+  listingRows: mergedOffers.length,
   capturedAt: snapshot.capturedAt,
 }, null, 2));

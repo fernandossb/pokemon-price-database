@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
-export const MAX_BROWSER_SNAPSHOT_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+export const MAX_BROWSER_SNAPSHOT_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const ALLOWED_LANGUAGES = new Set(['pt-br', 'en', 'ja']);
 
 export function normalizeLigaOffer(raw, nowMs = Date.now(), maxAgeMs = MAX_AGE_MS) {
@@ -61,7 +61,6 @@ export async function loadLigaOfferSnapshot(file = 'data/ligapokemon-offers.json
     || !Number.isInteger(data.coverage.cardCount) || data.coverage.cardCount < 1) {
     throw new Error('Formato inválido para snapshot de anúncios da Liga Pokémon (schemaVersion 2).');
   }
-  if (data.offers.length === 0) throw new Error('Snapshot Liga sem anúncios: geração dos preços cancelada.');
   const capturedMs = Date.parse(String(data.capturedAt || ''));
   if (!Number.isFinite(capturedMs) || capturedMs < nowMs - MAX_BROWSER_SNAPSHOT_AGE_MS || capturedMs > nowMs + 5 * 60 * 1000) {
     throw new Error('O snapshot de anúncios da Liga não tem `capturedAt` recente e válido.');

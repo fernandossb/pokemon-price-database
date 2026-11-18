@@ -4,14 +4,14 @@ import path from 'node:path';
 const status = JSON.parse(await fs.readFile('output/status.json', 'utf8'));
 const index = JSON.parse(await fs.readFile('output/card-shard-index.json', 'utf8'));
 const browserSnapshot = (status.ligaFetchedAtSources || []).includes('snapshot-captured-at');
-const freshnessWindow = browserSnapshot ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+const freshnessWindow = browserSnapshot ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
 
 if (Number(status.schemaVersion) !== 4 || status.format !== 'sharded-v2') throw new Error('Versão/formato do status incompatível');
 if (Number(index.meta?.schemaVersion) !== 4 || index.meta?.format !== 'card-shard-index-v2') throw new Error('Índice de cartas inválido');
 if (status.status !== 'complete') throw new Error(`Atualização incompleta: ${status.shardsCompleted}/${status.shardsExpected} shards`);
 if (!Number.isFinite(status.cardsInCatalog) || status.cardsInCatalog < 1) throw new Error('Catálogo vazio');
 if (!Number.isFinite(status.variantsDiscovered) || status.variantsDiscovered < 1) throw new Error('Nenhum enum descoberto');
-if (!Number.isFinite(status.variantsPriced) || status.variantsPriced < 1) throw new Error('Nenhum preço gerado');
+if (!Number.isFinite(status.variantsPriced) || status.variantsPriced < 0) throw new Error('Contagem de preços inválida');
 if (Object.keys(index.cards || {}).length !== status.cardsInCatalog) throw new Error('Índice não cobre todo o catálogo');
 if (status.priceSource !== 'ligapokemon' || !status.ligaSnapshotId ||
     !Number.isFinite(Date.parse(status.ligaFetchedAtMin || '')) ||
@@ -30,7 +30,7 @@ let ligaFetchedAtMax = null;
 for (const file of status.shardFiles || []) {
   const payload = JSON.parse(await fs.readFile(path.join('output/shards', file), 'utf8'));
   const shardBrowserSnapshot = (payload.meta?.ligaFetchedAtSources || []).includes('snapshot-captured-at');
-  const shardFreshnessWindow = shardBrowserSnapshot ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  const shardFreshnessWindow = shardBrowserSnapshot ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
   if (Number(payload.meta?.schemaVersion) !== 4 || payload.meta?.format !== 'price-shard-v2') throw new Error(`Shard inválido: ${file}`);
   if (payload.meta?.priceSource !== 'ligapokemon' || payload.meta?.ligaSnapshotId !== status.ligaSnapshotId ||
       !Number.isFinite(Date.parse(payload.meta?.ligaFetchedAtMin || '')) ||

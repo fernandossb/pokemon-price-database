@@ -12,6 +12,7 @@
     "liga:browser-queue": "node scripts/prepare-liga-browser-queue.mjs",
     "liga:import-versions": "node scripts/import-liga-version-index.mjs",
     "liga:import-browser": "node scripts/import-liga-browser-capture.mjs",
+    "liga:prepare-checkpoints": "node scripts/prepare-liga-browser-checkpoints.mjs",
     "liga:sync-server": "node scripts/liga-sync-server.mjs",
     "shard": "node scripts/process-shard.mjs",
     "consolidate": "node scripts/consolidate.mjs",

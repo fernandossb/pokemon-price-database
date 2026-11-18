@@ -7,6 +7,13 @@ async function send(message) {
   return response;
 }
 
+$('resumeRemote').addEventListener('click', async () => {
+  try {
+    status.value = 'Buscando fila e checkpoint salvos no GitHub…';
+    status.value = (await send({ type: 'RESUME_REMOTE' })).message;
+  } catch (error) { status.value = error.message; }
+});
+
 $('discover').addEventListener('click', async () => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

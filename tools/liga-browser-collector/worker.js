@@ -7,11 +7,13 @@ const PAGE_RETRY_DELAY_MS = 60_000;
 const MAX_PAGE_RETRIES = 6;
 const MAX_RETRY_DELAY_MS = 30 * 60_000;
 const MAX_RETRY_AFTER_MS = 30 * 24 * 60 * 60_000;
+const CHECKPOINT_SIZE = 100;
 const PAGE_RETRY_ALARM = 'liga-page-retry';
 const NEXT_PAGE_ALARM = 'liga-next-page';
 const EDITIONS_URL = 'https://www.ligapokemon.com.br/?view=cards/edicoes';
 const EDITION_SYNC_URL = 'http://127.0.0.1:17835/sync/editions';
-const PRICE_SYNC_URL = 'http://127.0.0.1:17835/sync/prices';
+const CHECKPOINT_SYNC_URL = 'http://127.0.0.1:17835/sync/checkpoint';
+const RESUME_SYNC_URL = 'http://127.0.0.1:17835/sync/resume';
 let captureLock = false;
 
 function openDb() {
@@ -151,7 +153,18 @@ async function postSnapshot(url, snapshot) {
   return payload;
 }
 
-async function installAndStartQueue(queue, tabId) {
+function currentQueueId(queue) {
+  return `${queue.catalogHash}:${queue.generatedAt}`;
+}
+
+async function getRemoteResume() {
+  const response = await fetch(RESUME_SYNC_URL, { cache: 'no-store' });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.ok !== true) throw new Error(payload.error || `Servidor local respondeu HTTP ${response.status}.`);
+  return payload;
+}
+
+async function installAndStartQueue(queue, tabId, progress = null) {
   if (queue?.source !== 'ligapokemon-version-map'
     || queue?.schemaVersion !== 1
     || !Array.isArray(queue.cards) || !Array.isArray(queue.excluded)
@@ -160,20 +173,85 @@ async function installAndStartQueue(queue, tabId) {
     throw new Error('O Price Database devolveu uma fila incompleta ou incompatível.');
   }
   const db = await openDb();
+  const queueIdentity = currentQueueId(queue);
+  const remoteIds = new Set(progress?.queueId === queueIdentity
+    && progress?.catalogHash === queue.catalogHash && Array.isArray(progress.cardIds)
+    ? progress.cardIds.map(String) : []);
+  const index = queue.cards.findIndex(card => !remoteIds.has(String(card.cardId)));
   const job = {
-    mode: 'card-prices', queue, status: 'running', index: 0, tabId,
-    inFlight: false, retryCount: 0, reason: 'Versões salvas no Price Database; iniciando a leitura de preços.', importedAt: new Date().toISOString(),
+    mode: 'card-prices', queue, queueId: queueIdentity, status: 'running',
+    index: index < 0 ? queue.cards.length : index, tabId,
+    inFlight: false, retryCount: 0, remoteCapturedCount: remoteIds.size,
+    reason: remoteIds.size ? `Retomando do checkpoint remoto: ${remoteIds.size} cartas já salvas.` : 'Versões salvas no Price Database; iniciando a leitura dos anúncios.', importedAt: new Date().toISOString(),
   };
   await new Promise((resolve, reject) => {
     const tx = db.transaction(['state', 'cards', 'editions'], 'readwrite');
     tx.objectStore('cards').clear();
     tx.objectStore('editions').clear();
+    for (const cardId of remoteIds) tx.objectStore('cards').put({ cardId, checkpointed: true, remoteCheckpoint: true });
     tx.objectStore('state').put({ key: 'job', ...job });
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error);
   });
   await chrome.action.setBadgeText({ text: '' });
-  await navigateToCurrent(job);
+  if (job.index >= queue.cards.length) {
+    job.status = 'complete';
+    job.inFlight = false;
+    job.reason = 'A fila remota já está completa; vou confirmar e atualizar os preços publicados.';
+    await saveJob(job);
+    void syncCompletedSearch(job);
+  } else await navigateToCurrent(job);
+}
+
+async function syncPriceCheckpoint(job, complete = false) {
+  const queueCards = new Map(job.queue.cards.map(card => [String(card.cardId), card]));
+  const captures = (await allRecords('cards')).filter(record => !record.checkpointed
+    && !record.remoteCheckpoint && Number.isFinite(Date.parse(String(record.capturedAt || '')))
+    && Array.isArray(record.offers));
+  const payload = {
+    schemaVersion: 1,
+    source: 'ligapokemon-browser-checkpoint',
+    queueId: job.queueId || currentQueueId(job.queue),
+    catalogHash: job.queue.catalogHash,
+    complete,
+    cards: captures.map(record => {
+      if (!queueCards.has(String(record.cardId))) throw new Error(`Captura fora da fila: ${record.cardId}.`);
+      return { cardId: record.cardId, captured: true, capturedAt: record.capturedAt,
+        rowCount: record.rowCount || 0, unpricedRowCount: record.unpricedRowCount || 0,
+        offers: record.offers };
+    }),
+  };
+  const result = await postSnapshot(CHECKPOINT_SYNC_URL, payload);
+  for (const record of captures) {
+    record.checkpointed = true;
+    await writeRecord('cards', record);
+  }
+  const latest = await getJob();
+  if (latest?.queueId === payload.queueId) {
+    latest.remoteCapturedCount = result.capturedCount;
+    latest.lastCheckpointAt = new Date().toISOString();
+    latest.reason = result.message || 'Checkpoint enviado ao pokemon-price-database.';
+    await saveJob(latest);
+  }
+  return result;
+}
+
+async function mergeRemoteProgress(job, progress) {
+  if (progress?.queueId !== (job.queueId || currentQueueId(job.queue))
+    || progress?.catalogHash !== job.queue.catalogHash || !Array.isArray(progress.cardIds)) return false;
+  const completedIds = new Set(progress.cardIds.map(String));
+  const records = await allRecords('cards');
+  const recordsById = new Map(records.map(record => [String(record.cardId), record]));
+  for (const cardId of completedIds) {
+    if (!recordsById.has(cardId)) {
+      await writeRecord('cards', { cardId, checkpointed: true, remoteCheckpoint: true });
+      recordsById.set(cardId, { cardId, checkpointed: true, remoteCheckpoint: true });
+    }
+  }
+  const firstMissing = job.queue.cards.findIndex(card => !recordsById.has(String(card.cardId)));
+  job.index = firstMissing < 0 ? job.queue.cards.length : firstMissing;
+  job.remoteCapturedCount = progress.capturedCount || completedIds.size;
+  return true;
 }
 
 async function syncCompletedSearch(job) {
@@ -188,19 +266,18 @@ async function syncCompletedSearch(job) {
       const result = await postSnapshot(EDITION_SYNC_URL, snapshot);
       const latest = await getJob();
       if (!latest || latest.status !== 'complete' || latest.mode !== 'edition-discovery') return;
-      await installAndStartQueue(result.queue, latest.tabId);
+      await installAndStartQueue(result.queue, latest.tabId, result.progress);
       return;
     }
     if (job.queue?.cards?.length) {
       job.syncState = 'uploading';
-      job.reason = 'Cartas lidas; salvando os anúncios no pokemon-price-database…';
+      job.reason = 'Finalizando o último checkpoint no pokemon-price-database…';
       await saveJob(job);
-      const snapshot = await capturePriceSnapshot(job);
-      const result = await postSnapshot(PRICE_SYNC_URL, snapshot);
+      const result = await syncPriceCheckpoint(job, true);
       const latest = await getJob();
       if (!latest || latest.status !== 'complete') return;
       latest.syncState = 'published';
-      latest.reason = result.message || 'Snapshot enviado ao pokemon-price-database; o GitHub atualizará os preços.';
+      latest.reason = result.message || 'Checkpoint final enviado; o GitHub atualizará os preços.';
       await saveJob(latest);
     }
   } catch (error) {
@@ -263,7 +340,8 @@ async function schedulePageRetry(job, url, error, requestedDelayMs = null) {
 
 async function capturePriceSnapshot(job) {
   if (!job?.queue?.cards?.length) throw new Error('Fila de preços ausente.');
-  const captures = await allRecords('cards');
+  const captures = (await allRecords('cards')).filter(record => !record.remoteCheckpoint
+    && Number.isFinite(Date.parse(String(record.capturedAt || ''))) && Array.isArray(record.offers));
   const capturedIds = new Set(captures.map(record => record.cardId));
   const captureById = new Map(captures.map(record => [record.cardId, record]));
   return {
@@ -275,30 +353,17 @@ async function capturePriceSnapshot(job) {
       cardCount: job.queue.catalogCardCount,
       eligibleCardCount: job.queue.eligibleCardCount,
       excludedCardCount: job.queue.excludedCardCount,
-      capturedCardCount: captures.length,
+      capturedCardCount: capturedIds.size,
       complete: job.status === 'complete' && job.index === job.queue.cards.length
-        && captures.length === job.queue.cards.length
+        && capturedIds.size === job.queue.cards.length
         && job.queue.excluded.every(item => ['digital_only_tcg_pocket', 'liga_print_unmatched', 'multiple_liga_prints_for_card_id'].includes(item.reason)),
     },
     excluded: job.queue.excluded,
     cards: job.queue.cards.map(card => {
       const result = captureById.get(card.cardId);
-      return { ...card, captured: capturedIds.has(card.cardId), ...(result || {}) };
+      return { ...card, captured: Boolean(result), ...(result || {}) };
     }),
   };
-}
-
-async function publishPriceSnapshot(job) {
-  const snapshot = await capturePriceSnapshot(job);
-  if (!snapshot.coverage.complete) throw new Error('A coleta não terminou; snapshot não enviado.');
-  const response = await fetch(PRICE_SYNC_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(snapshot),
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload.ok !== true) throw new Error(payload.error || `Servidor local respondeu HTTP ${response.status}.`);
-  return payload;
 }
 
 async function createBackgroundTab() {
@@ -467,6 +532,7 @@ async function captureLoadedPage(tabId) {
     }
     await writeRecord('cards', {
       cardId: card.cardId,
+      captured: true,
       capturedAt: result.observedAt,
       rowCount: result.rowCount,
       unpricedRowCount: result.unpricedRowCount || 0,
@@ -481,6 +547,18 @@ async function captureLoadedPage(tabId) {
     if (job.index >= job.queue.cards.length) job.status = 'complete';
     await saveJob(job);
     if (job.status === 'running') {
+      const pending = (await allRecords('cards')).filter(record => !record.checkpointed
+        && !record.remoteCheckpoint && Number.isFinite(Date.parse(String(record.capturedAt || '')))
+        && Array.isArray(record.offers)).length;
+      if (pending >= CHECKPOINT_SIZE) {
+        try {
+          await syncPriceCheckpoint(job, false);
+          job = await getJob();
+        } catch (error) {
+          await setStatus('paused', `Checkpoint de ${pending} cartas não foi salvo no GitHub. As capturas locais foram preservadas; retome para tentar novamente. ${error.message}`);
+          return;
+        }
+      }
       await scheduleNextPage();
     } else if (job.status === 'complete') {
       void syncCompletedSearch(job);
@@ -544,6 +622,18 @@ async function restoreScheduledWork() {
   if (job.retryAt) {
     await chrome.alarms.create(PAGE_RETRY_ALARM, { when: Math.max(Date.now(), job.retryAt) });
   } else if (!job.inFlight) {
+    if (job.mode === 'card-prices') {
+      const pending = (await allRecords('cards')).filter(record => !record.checkpointed
+        && !record.remoteCheckpoint && Number.isFinite(Date.parse(String(record.capturedAt || '')))
+        && Array.isArray(record.offers)).length;
+      if (pending >= CHECKPOINT_SIZE) {
+        try { await syncPriceCheckpoint(job, false); }
+        catch (error) {
+          await setStatus('paused', `Checkpoint de ${pending} cartas não foi salvo no GitHub. As capturas locais foram preservadas; retome para tentar novamente. ${error.message}`);
+          return;
+        }
+      }
+    }
     await scheduleNextPage();
   }
 }
@@ -574,7 +664,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         tx.objectStore('cards').clear();
         tx.objectStore('editions').clear();
         tx.objectStore('state').put({
-          key: 'job', queue, status: 'ready', index: 0, tabId: null,
+          key: 'job', queue, queueId: currentQueueId(queue), status: 'ready', index: 0, tabId: null,
           inFlight: false, reason: '', importedAt: new Date().toISOString(),
           retryCount: 0,
         });
@@ -582,6 +672,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         tx.onerror = () => reject(tx.error);
       });
       sendResponse({ ok: true, total: queue.cards.length, excluded: queue.excluded.length });
+      return;
+    }
+    if (message?.type === 'RESUME_REMOTE') {
+      const remote = await getRemoteResume();
+      if (remote.progress?.complete) {
+        sendResponse({ ok: true, message: `A coleta desta fila já está completa (${remote.progress.capturedCount}/${remote.queue.cards.length}).` });
+        return;
+      }
+      const previous = await getJob();
+      const backgroundTabId = await createBackgroundTab();
+      await installAndStartQueue(remote.queue, backgroundTabId, remote.progress);
+      await closeOldScannerTab(previous?.tabId, backgroundTabId, message.tabId);
+      const latest = await getJob();
+      sendResponse({ ok: true, message: latest.status === 'complete'
+        ? `Fila restaurada: ${latest.queue.cards.length} cartas já salvas; confirmando a publicação final.`
+        : `Fila restaurada do GitHub; retomando em ${latest.index + 1}/${latest.queue.cards.length}, com ${latest.remoteCapturedCount || 0} cartas já salvas remotamente.` });
       return;
     }
     if (message?.type === 'START_EDITION_DISCOVERY') {
@@ -635,6 +741,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (!/^https:\/\/(www\.)?ligapokemon\.com\.br\//i.test(tab.url || '')) {
         throw new Error('A aba ativa precisa estar aberta em ligapokemon.com.br.');
       }
+      job.queueId = job.queueId || currentQueueId(job.queue);
+      try {
+        const remote = await getRemoteResume();
+        await mergeRemoteProgress(job, remote.progress);
+      } catch {}
+      const localCaptures = (await allRecords('cards')).filter(record => !record.checkpointed
+        && !record.remoteCheckpoint && Number.isFinite(Date.parse(String(record.capturedAt || '')))
+        && Array.isArray(record.offers)).length;
+      if (localCaptures >= CHECKPOINT_SIZE) await syncPriceCheckpoint(job, false);
       const oldTabId = job.tabId;
       job.tabId = await createBackgroundTab();
       job.status = 'running';
