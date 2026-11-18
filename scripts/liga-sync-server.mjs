@@ -87,7 +87,8 @@ function send(response, status, value) {
 }
 
 function allowedOrigin(origin) {
-  return /^chrome-extension:\/\/[a-p]{32}$/.test(String(origin || ''));
+  const normalized = String(origin || '').trim().replace(/\/+$/, '');
+  return /^chrome-extension:\/\/[a-p]{32}$/.test(normalized);
 }
 
 function readBody(request) {
