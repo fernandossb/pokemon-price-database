@@ -8,6 +8,7 @@ on:
       - data/ligapokemon-offers.json
       - data/ligapokemon-browser-progress.json
       - data/ligapokemon-browser-checkpoints/**
+      - .github/workflows/update-prices.yml
 
 permissions:
   contents: write
@@ -31,6 +32,8 @@ jobs:
         run: npm run catalog
       - name: Importar edições e numeração observadas na Liga
         run: npm run liga:import-versions -- data/ligapokemon-edition-index.json
+      - name: Reconstruir catálogo com versões da Liga
+        run: npm run catalog
       - name: Preparar preços dos checkpoints acumulados
         run: node scripts/prepare-liga-browser-checkpoints.mjs
       - name: Processar somente o snapshot de anúncios da Liga
