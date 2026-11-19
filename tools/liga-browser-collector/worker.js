@@ -173,6 +173,24 @@ function currentQueueId(queue) {
   return `${queue.catalogHash}:${queue.generatedAt}`;
 }
 
+async function getOwnedPriorityIds() {
+  const stored = await readRecord('state', 'owned-priority');
+  return new Set(Array.isArray(stored?.cardIds) ? stored.cardIds.map(String) : []);
+}
+
+function prioritizeQueue(queue, priorityIds, completedIds = new Set()) {
+  const completed = [];
+  const owned = [];
+  const remaining = [];
+  for (const card of queue.cards) {
+    const id = String(card.cardId);
+    if (completedIds.has(id)) completed.push(card);
+    else if (priorityIds.has(id)) owned.push(card);
+    else remaining.push(card);
+  }
+  return { ...queue, cards: [...completed, ...owned, ...remaining] };
+}
+
 async function getRemoteResume() {
   const response = await fetch(RESUME_SYNC_URL, {
     cache: 'no-store',
@@ -196,6 +214,7 @@ async function installAndStartQueue(queue, tabId, progress = null) {
   const remoteIds = new Set(progress?.queueId === queueIdentity
     && progress?.catalogHash === queue.catalogHash && Array.isArray(progress.cardIds)
     ? progress.cardIds.map(String) : []);
+  queue = prioritizeQueue(queue, await getOwnedPriorityIds(), remoteIds);
   const index = queue.cards.findIndex(card => !remoteIds.has(String(card.cardId)));
   const job = {
     mode: 'card-prices', queue, queueId: queueIdentity, status: 'running',
@@ -731,8 +750,45 @@ chrome.runtime.onStartup.addListener(() => void restoreScheduledWork());
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
+    if (message?.type === 'SET_OWNED_PRIORITY') {
+      if (!Array.isArray(message.cardIds) || message.cardIds.length > 100_000) {
+        throw new Error('A lista de cartas do backup é inválida.');
+      }
+      const cardIds = [...new Set(message.cardIds.map(value => String(value || '').trim())
+        .filter(value => value && value.length <= 100))];
+      if (!cardIds.length) throw new Error('Não encontrei cartas possuídas no backup.');
+      const priorityIds = new Set(cardIds);
+      await writeRecord('state', { key: 'owned-priority', cardIds });
+
+      let job = await getJob();
+      const wasRunning = job?.mode === 'card-prices' && job.status === 'running';
+      if (wasRunning) await setStatus('paused', 'Coleta pausada para priorizar as cartas da sua coleção.');
+      job = await getJob();
+      let messageText = `Lista privada salva neste computador: ${cardIds.length} cartas suas.`;
+      if (job?.mode === 'card-prices' && Array.isArray(job.queue?.cards)) {
+        const completedIds = new Set(job.queue.cards.slice(0, Math.max(0, job.index || 0))
+          .map(card => String(card.cardId)));
+        for (const record of await allRecords('cards')) {
+          if (record?.checkpointed || record?.remoteCheckpoint
+            || (Number.isFinite(Date.parse(String(record?.capturedAt || ''))) && Array.isArray(record?.offers))) {
+            completedIds.add(String(record.cardId));
+          }
+        }
+        job.queue = prioritizeQueue(job.queue, priorityIds, completedIds);
+        job.index = job.queue.cards.reduce((count, card) => count + (completedIds.has(String(card.cardId)) ? 1 : 0), 0);
+        const matched = job.queue.cards.filter(card => priorityIds.has(String(card.cardId))).length;
+        const pendingOwned = job.queue.cards.slice(job.index).filter(card => priorityIds.has(String(card.cardId))).length;
+        job.reason = `Prioridade aplicada: ${pendingOwned} cartas suas pendentes vêm primeiro.`;
+        await saveJob(job);
+        messageText = `Prioridade aplicada: ${pendingOwned} cartas suas ainda pendentes vêm primeiro; ${matched} das ${cardIds.length} cartas do backup estão na fila.${wasRunning ? ' A coleta foi pausada para reorganizar; toque em Iniciar / continuar.' : ''}`;
+      } else if (wasRunning) {
+        messageText += ' A coleta foi pausada; retome em Iniciar / continuar.';
+      }
+      sendResponse({ ok: true, message: messageText });
+      return;
+    }
     if (message?.type === 'IMPORT_QUEUE') {
-      const queue = message.queue;
+      let queue = message.queue;
       const currentJob = await getJob();
       if (currentJob?.mode === 'edition-discovery' && currentJob.status === 'running') {
         throw new Error('A descoberta das versões ainda está em andamento. Aguarde terminar e exporte o snapshot antes de carregar a fila de preços.');
@@ -746,6 +802,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         || queue.cards.length + queue.excluded.length !== Number(queue.catalogCardCount)) {
         throw new Error('Fila inválida ou incompleta; nada foi carregado.');
       }
+      queue = prioritizeQueue(queue, await getOwnedPriorityIds());
       const db = await openDb();
       await new Promise((resolve, reject) => {
         const tx = db.transaction(['state', 'cards', 'editions'], 'readwrite');

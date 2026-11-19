@@ -34,6 +34,37 @@ async function send(message) {
   return response;
 }
 
+function ownedCardIdsFromBackup(backup) {
+  if (backup?.format !== 'fichario-pokemon-br-plus-backup'
+    || !backup.state?.entries || typeof backup.state.entries !== 'object'
+    || Array.isArray(backup.state.entries)) {
+    throw new Error('Este arquivo não parece ser um backup válido do POKECARD.');
+  }
+  const ids = [];
+  for (const [cardId, entry] of Object.entries(backup.state.entries)) {
+    const variants = Array.isArray(entry?.variants) ? entry.variants : [];
+    const quantity = variants.length
+      ? variants.reduce((total, item) => total + Math.max(0, Number(item?.quantity) || 0), 0)
+      : Math.max(0, Number(entry?.quantity) || 0);
+    if (quantity > 0) ids.push(cardId);
+  }
+  if (!ids.length) throw new Error('O backup não contém cartas marcadas como “Tenho”.');
+  return ids;
+}
+
+$('setPriority').addEventListener('click', async () => {
+  const output = $('priorityStatus');
+  try {
+    const file = $('collectionBackup').files?.[0];
+    if (!file) throw new Error('Selecione o backup atual do POKECARD.');
+    output.value = 'Lendo a coleção localmente…';
+    const backup = JSON.parse(await file.text());
+    const cardIds = ownedCardIdsFromBackup(backup);
+    const result = await send({ type: 'SET_OWNED_PRIORITY', cardIds });
+    output.value = result.message;
+  } catch (error) { output.value = error.message; }
+});
+
 $('resumeRemote').addEventListener('click', async () => {
   try {
     status.value = 'Buscando fila e checkpoint salvos no GitHub…';
