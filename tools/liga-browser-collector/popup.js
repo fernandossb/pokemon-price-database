@@ -1,5 +1,32 @@
 const $ = id => document.getElementById(id);
 const status = $('status');
+const githubCount = $('githubCount');
+const checkpointTimer = $('checkpointTimer');
+let nextCheckpointAt = null;
+
+function renderCheckpointTimer() {
+  if (!nextCheckpointAt) {
+    checkpointTimer.value = 'Próximo checkpoint: sem envio agendado.';
+    return;
+  }
+  const remainingSeconds = Math.max(0, Math.ceil((nextCheckpointAt - Date.now()) / 1000));
+  const minutes = String(Math.floor(remainingSeconds / 60)).padStart(2, '0');
+  const seconds = String(remainingSeconds % 60).padStart(2, '0');
+  checkpointTimer.value = remainingSeconds === 0
+    ? 'Próximo checkpoint: envio em andamento…'
+    : `Próximo checkpoint automático em ${minutes}:${seconds}`;
+}
+
+async function refreshStatus() {
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'STATUS' });
+    if (!result?.ok) return;
+    if (result.message) status.value = result.message;
+    githubCount.value = result.githubMessage || 'No GitHub: aguardando fila.';
+    nextCheckpointAt = Number.isFinite(result.nextCheckpointAt) ? result.nextCheckpointAt : null;
+    renderCheckpointTimer();
+  } catch {}
+}
 
 async function send(message) {
   const response = await chrome.runtime.sendMessage(message);
@@ -72,6 +99,6 @@ $('export').addEventListener('click', async () => {
   } catch (error) { status.value = error.message; }
 });
 
-chrome.runtime.sendMessage({ type: 'STATUS' }).then(result => {
-  if (result?.ok && result.message) status.value = result.message;
-}).catch(() => {});
+void refreshStatus();
+setInterval(refreshStatus, 15_000);
+setInterval(renderCheckpointTimer, 1_000);

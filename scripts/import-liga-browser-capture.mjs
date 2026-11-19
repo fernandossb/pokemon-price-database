@@ -35,6 +35,19 @@ const refreshedCardIds = new Set(capture.cards.map(card => String(card.cardId)))
 const pendingMappings = (previousSnapshot?.pendingMappings || [])
   .filter(item => !refreshedCardIds.has(String(item.cardId)));
 for (const card of capture.cards) {
+  for (const row of (Array.isArray(card.unparsedRows) ? card.unparsedRows : []).slice(0, 500)) {
+    pendingMappings.push({
+      cardId: String(card.cardId),
+      listingId: String(row?.listingId || '').slice(0, 120),
+      reason: 'liga_language_unparsed',
+      language: '',
+      condition: String(row?.condition || '').slice(0, 12),
+      priceBrl: Number(row?.priceBrl) || null,
+      detail: String(row?.text || '').slice(0, 180),
+    });
+  }
+}
+for (const card of capture.cards) {
   const byLanguage = new Map();
   for (const { language, value } of card.availableEnums || []) {
     if (!byLanguage.has(language)) byLanguage.set(language, []);

@@ -12,3 +12,5 @@ button:disabled { opacity: .5; cursor: default; }
 .secondary { background: #e3e9f2; color: #182230; }
 .actions { display: grid; grid-template-columns: 1.5fr 1fr; gap: 8px; }
 output { min-height: 36px; padding: 8px; border-radius: 7px; background: white; white-space: pre-wrap; overflow-wrap: anywhere; }
+.github-count { min-height: 0; background: #e8f5ee; color: #14532d; font-weight: 700; }
+.checkpoint-timer { min-height: 0; background: #e8eefb; color: #183b70; font-weight: 700; font-variant-numeric: tabular-nums; }

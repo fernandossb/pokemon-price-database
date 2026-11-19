@@ -92,6 +92,7 @@ function extractOffers(container, card, observedAt) {
   const rows = [...container.querySelectorAll('[id^="mpline_1_"]')];
   const offers = [];
   const issues = [];
+  const unparsedRows = [];
   let unpricedRowCount = 0;
   for (const row of rows) {
     const listingId = row.id.match(/^mpline_1_(.+)$/)?.[1] || '';
@@ -106,8 +107,14 @@ function extractOffers(container, card, observedAt) {
       unpricedRowCount += 1;
       continue;
     }
-    if (!listingId || !language || !condition) {
-      issues.push({ listingId, text: text.slice(0, 180), missing: [!listingId && 'listingId', !language && 'language', !condition && 'condition'].filter(Boolean) });
+    if (!listingId || !condition) {
+      issues.push({ listingId, text: text.slice(0, 180), missing: [!listingId && 'listingId', !condition && 'condition'].filter(Boolean) });
+      continue;
+    }
+    if (!language) {
+      // Keep the row for later review, but never guess its language. One row
+      // with a missing flag must not stop the rest of the queue.
+      unparsedRows.push({ listingId, text: text.slice(0, 180), priceBrl, condition, missing: ['language'] });
       continue;
     }
     const extras = [...row.querySelectorAll('span,small,label,[class*="extra"],[class*="foil"]')]
@@ -133,7 +140,7 @@ function extractOffers(container, card, observedAt) {
       observedAt,
     });
   }
-  return { offers, issues, rowCount: rows.length, unpricedRowCount };
+  return { offers, issues, unparsedRows, rowCount: rows.length, unpricedRowCount, unparsedRowCount: unparsedRows.length };
 }
 
 function parseEditionLink(anchor) {

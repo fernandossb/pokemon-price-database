@@ -8,13 +8,16 @@ const MAX_PAGE_RETRIES = 6;
 const MAX_RETRY_DELAY_MS = 30 * 60_000;
 const MAX_RETRY_AFTER_MS = 30 * 24 * 60 * 60_000;
 const CHECKPOINT_SIZE = 100;
+const CHECKPOINT_INTERVAL_MS = 10 * 60_000;
 const PAGE_RETRY_ALARM = 'liga-page-retry';
 const NEXT_PAGE_ALARM = 'liga-next-page';
+const PERIODIC_CHECKPOINT_ALARM = 'liga-periodic-checkpoint';
 const EDITIONS_URL = 'https://www.ligapokemon.com.br/?view=cards/edicoes';
 const EDITION_SYNC_URL = 'http://127.0.0.1:17835/sync/editions';
 const CHECKPOINT_SYNC_URL = 'http://127.0.0.1:17835/sync/checkpoint';
 const RESUME_SYNC_URL = 'http://127.0.0.1:17835/sync/resume';
 let captureLock = false;
+let checkpointChain = Promise.resolve();
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -86,6 +89,7 @@ async function setStatus(status, reason = '') {
   job.retryUrl = '';
   await chrome.alarms.clear(PAGE_RETRY_ALARM);
   await chrome.alarms.clear(NEXT_PAGE_ALARM);
+  if (status !== 'running') await chrome.alarms.clear(PERIODIC_CHECKPOINT_ALARM);
   await saveJob(job);
   await chrome.action.setBadgeText({ text: status === 'paused' ? '!' : '' });
   if (status === 'paused') await chrome.action.setBadgeBackgroundColor({ color: '#b42318' });
@@ -117,6 +121,15 @@ async function scheduleNextPage() {
   await chrome.alarms.create(NEXT_PAGE_ALARM, { when: Date.now() + delay });
 }
 
+async function schedulePeriodicCheckpoint(job) {
+  if (job?.mode === 'card-prices' && job.status === 'running') {
+    await chrome.alarms.create(PERIODIC_CHECKPOINT_ALARM, {
+      when: Date.now() + CHECKPOINT_INTERVAL_MS,
+      periodInMinutes: 10,
+    });
+  }
+}
+
 function currentPageUrl(job) {
   if (job?.mode === 'edition-index') return EDITIONS_URL;
   if (job?.mode === 'edition-discovery') return job.editions?.[job.index]?.url || '';
@@ -146,7 +159,10 @@ async function editionIndexSnapshot(job) {
 
 async function postSnapshot(url, snapshot) {
   const response = await fetch(url, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(snapshot),
+    method: 'POST', headers: {
+      'content-type': 'application/json',
+      'x-pokecard-extension-id': chrome.runtime.id,
+    }, body: JSON.stringify(snapshot),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.ok !== true) throw new Error(payload.error || `Servidor local respondeu HTTP ${response.status}.`);
@@ -158,7 +174,10 @@ function currentQueueId(queue) {
 }
 
 async function getRemoteResume() {
-  const response = await fetch(RESUME_SYNC_URL, { cache: 'no-store' });
+  const response = await fetch(RESUME_SYNC_URL, {
+    cache: 'no-store',
+    headers: { 'x-pokecard-extension-id': chrome.runtime.id },
+  });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || payload.ok !== true) throw new Error(payload.error || `Servidor local respondeu HTTP ${response.status}.`);
   return payload;
@@ -181,7 +200,7 @@ async function installAndStartQueue(queue, tabId, progress = null) {
   const job = {
     mode: 'card-prices', queue, queueId: queueIdentity, status: 'running',
     index: index < 0 ? queue.cards.length : index, tabId,
-    inFlight: false, retryCount: 0, remoteCapturedCount: remoteIds.size,
+    inFlight: false, retryCount: 0, remoteCapturedCount: remoteIds.size, pendingRemoteCount: 0,
     reason: remoteIds.size ? `Retomando do checkpoint remoto: ${remoteIds.size} cartas já salvas.` : 'Versões salvas no Price Database; iniciando a leitura dos anúncios.', importedAt: new Date().toISOString(),
   };
   await new Promise((resolve, reject) => {
@@ -200,14 +219,21 @@ async function installAndStartQueue(queue, tabId, progress = null) {
     job.reason = 'A fila remota já está completa; vou confirmar e atualizar os preços publicados.';
     await saveJob(job);
     void syncCompletedSearch(job);
-  } else await navigateToCurrent(job);
+  } else {
+    await schedulePeriodicCheckpoint(job);
+    await navigateToCurrent(job);
+  }
 }
 
-async function syncPriceCheckpoint(job, complete = false) {
+async function performPriceCheckpoint(job, complete = false) {
   const queueCards = new Map(job.queue.cards.map(card => [String(card.cardId), card]));
   const captures = (await allRecords('cards')).filter(record => !record.checkpointed
     && !record.remoteCheckpoint && Number.isFinite(Date.parse(String(record.capturedAt || '')))
     && Array.isArray(record.offers));
+  if (!captures.length && !complete) {
+    return { ok: true, capturedCount: Number(job.remoteCapturedCount || 0), committed: false,
+      message: 'Nenhuma carta nova aguardando publicação no GitHub.' };
+  }
   const payload = {
     schemaVersion: 1,
     source: 'ligapokemon-browser-checkpoint',
@@ -218,6 +244,7 @@ async function syncPriceCheckpoint(job, complete = false) {
       if (!queueCards.has(String(record.cardId))) throw new Error(`Captura fora da fila: ${record.cardId}.`);
       return { cardId: record.cardId, captured: true, capturedAt: record.capturedAt,
         rowCount: record.rowCount || 0, unpricedRowCount: record.unpricedRowCount || 0,
+        unparsedRowCount: record.unparsedRowCount || 0, unparsedRows: record.unparsedRows || [],
         offers: record.offers };
     }),
   };
@@ -229,11 +256,45 @@ async function syncPriceCheckpoint(job, complete = false) {
   const latest = await getJob();
   if (latest?.queueId === payload.queueId) {
     latest.remoteCapturedCount = result.capturedCount;
+    latest.pendingRemoteCount = Math.max(0, Number(latest.pendingRemoteCount || 0) - captures.length);
     latest.lastCheckpointAt = new Date().toISOString();
+    latest.lastCheckpointError = '';
     latest.reason = result.message || 'Checkpoint enviado ao pokemon-price-database.';
     await saveJob(latest);
+    await schedulePeriodicCheckpoint(latest);
   }
   return result;
+}
+
+function syncPriceCheckpoint(job, complete = false) {
+  const operation = checkpointChain.catch(() => {}).then(() => performPriceCheckpoint(job, complete));
+  checkpointChain = operation;
+  return operation.finally(() => {
+    if (checkpointChain === operation) checkpointChain = Promise.resolve();
+  });
+}
+
+async function flushPeriodicCheckpoint() {
+  const job = await getJob();
+  if (job?.mode !== 'card-prices' || job.status !== 'running') return;
+  try {
+    const result = await syncPriceCheckpoint(job, false);
+    const latest = await getJob();
+    if (latest?.queueId === job.queueId) {
+      latest.lastPeriodicCheckpointAt = new Date().toISOString();
+      latest.lastCheckpointError = '';
+      if (result.message) latest.reason = result.message;
+      await saveJob(latest);
+      await schedulePeriodicCheckpoint(latest);
+    }
+  } catch (error) {
+    const latest = await getJob();
+    if (latest?.queueId === job.queueId) {
+      latest.lastCheckpointError = `Falha no envio periódico ao GitHub: ${error.message}`;
+      latest.reason = latest.lastCheckpointError;
+      await saveJob(latest);
+    }
+  }
 }
 
 async function mergeRemoteProgress(job, progress) {
@@ -256,6 +317,7 @@ async function mergeRemoteProgress(job, progress) {
 
 async function syncCompletedSearch(job) {
   if (job?.status !== 'complete') return;
+  await chrome.alarms.clear(PERIODIC_CHECKPOINT_ALARM);
   try {
     if (job.mode === 'edition-discovery') {
       job.syncState = 'uploading';
@@ -536,11 +598,14 @@ async function captureLoadedPage(tabId) {
       capturedAt: result.observedAt,
       rowCount: result.rowCount,
       unpricedRowCount: result.unpricedRowCount || 0,
+      unparsedRowCount: result.unparsedRowCount || 0,
+      unparsedRows: result.unparsedRows || [],
       offers: result.offers,
     });
     job = await getJob();
     if (!job || job.status !== 'running' || job.index >= job.queue.cards.length) return;
     job.index += 1;
+    job.pendingRemoteCount = Number(job.pendingRemoteCount || 0) + 1;
     job.inFlight = false;
     job.retryCount = 0;
     job.reason = '';
@@ -608,6 +673,7 @@ chrome.webRequest.onHeadersReceived.addListener(details => {
 
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === PAGE_RETRY_ALARM) void retryFailedPage();
+  if (alarm.name === PERIODIC_CHECKPOINT_ALARM) void flushPeriodicCheckpoint();
   if (alarm.name === NEXT_PAGE_ALARM) {
     void (async () => {
       const job = await getJob();
@@ -619,6 +685,28 @@ chrome.alarms.onAlarm.addListener(alarm => {
 async function restoreScheduledWork() {
   const job = await getJob();
   if (!job || job.status !== 'running') return;
+  await schedulePeriodicCheckpoint(job);
+  if (job.mode === 'card-prices' && job.inFlight) {
+    const currentCard = job.queue?.cards?.[job.index];
+    const savedCapture = currentCard ? await readRecord('cards', String(currentCard.cardId)) : null;
+    if (savedCapture?.captured === true && Array.isArray(savedCapture.offers)) {
+      job.index = Math.min(job.index + 1, job.queue.cards.length);
+      job.reason = `Retomando após reinício; captura local de ${currentCard.cardId} preservada.`;
+    } else {
+      job.reason = 'Retomando a página atual após reinício da extensão.';
+    }
+    job.inFlight = false;
+    job.pendingRemoteCount = (await allRecords('cards')).filter(record => !record.checkpointed
+      && !record.remoteCheckpoint && Number.isFinite(Date.parse(String(record.capturedAt || '')))
+      && Array.isArray(record.offers)).length;
+    await saveJob(job);
+  }
+  if (job.mode === 'card-prices' && !Number.isInteger(job.pendingRemoteCount)) {
+    job.pendingRemoteCount = (await allRecords('cards')).filter(record => !record.checkpointed
+      && !record.remoteCheckpoint && Number.isFinite(Date.parse(String(record.capturedAt || '')))
+      && Array.isArray(record.offers)).length;
+    await saveJob(job);
+  }
   if (job.retryAt) {
     await chrome.alarms.create(PAGE_RETRY_ALARM, { when: Math.max(Date.now(), job.retryAt) });
   } else if (!job.inFlight) {
@@ -665,7 +753,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         tx.objectStore('editions').clear();
         tx.objectStore('state').put({
           key: 'job', queue, queueId: currentQueueId(queue), status: 'ready', index: 0, tabId: null,
-          inFlight: false, reason: '', importedAt: new Date().toISOString(),
+          inFlight: false, reason: '', remoteCapturedCount: 0, pendingRemoteCount: 0,
+          importedAt: new Date().toISOString(),
           retryCount: 0,
         });
         tx.oncomplete = resolve;
@@ -749,7 +838,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const localCaptures = (await allRecords('cards')).filter(record => !record.checkpointed
         && !record.remoteCheckpoint && Number.isFinite(Date.parse(String(record.capturedAt || '')))
         && Array.isArray(record.offers)).length;
-      if (localCaptures >= CHECKPOINT_SIZE) await syncPriceCheckpoint(job, false);
+      job.pendingRemoteCount = localCaptures;
+      if (localCaptures >= CHECKPOINT_SIZE) {
+        const checkpoint = await syncPriceCheckpoint(job, false);
+        job.remoteCapturedCount = checkpoint.capturedCount;
+        job.pendingRemoteCount = 0;
+      }
       const oldTabId = job.tabId;
       job.tabId = await createBackgroundTab();
       job.status = 'running';
@@ -761,6 +855,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       await chrome.alarms.clear(PAGE_RETRY_ALARM);
       await chrome.alarms.clear(NEXT_PAGE_ALARM);
       await saveJob(job);
+      await schedulePeriodicCheckpoint(job);
       await navigateToCurrent(job);
       await closeOldScannerTab(oldTabId, job.tabId, message.tabId);
       await chrome.action.setBadgeText({ text: '' });
@@ -777,7 +872,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const job = await getJob();
       const total = job?.mode === 'edition-discovery' ? job.editions.length : job?.queue?.cards.length;
       const label = job?.mode === 'edition-index' ? 'preparando índice de edições' : job?.mode === 'edition-discovery' ? 'edições da Liga' : 'cartas';
-      sendResponse({ ok: true, message: job
+      const checkpointAlarm = job?.mode === 'card-prices' && job.status === 'running'
+        ? await chrome.alarms.get(PERIODIC_CHECKPOINT_ALARM) : null;
+      const githubMessage = job?.mode === 'card-prices'
+        ? `No GitHub: ${Number(job.remoteCapturedCount || 0)}/${Number(total || 0)} cartas verificadas · ${Number(job.pendingRemoteCount || 0)} aguardando envio.`
+        : '';
+      sendResponse({ ok: true, githubMessage, nextCheckpointAt: checkpointAlarm?.scheduledTime || null, message: job
         ? job.mode === 'edition-index'
           ? `${job.status}: ${label}. ${job.reason || ''}`.trim()
           : `${job.status}: ${job.index}/${total} ${label}. ${job.reason || ''}`.trim()

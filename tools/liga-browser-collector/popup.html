@@ -21,8 +21,10 @@
     </div>
     <button id="export" class="secondary">Exportar snapshot</button>
     <button id="sync" class="secondary">Sincronizar busca concluída</button>
+    <output id="githubCount" class="github-count" aria-live="polite">No GitHub: aguardando fila.</output>
+    <output id="checkpointTimer" class="checkpoint-timer" aria-live="polite">Próximo checkpoint: --:--</output>
     <output id="status" aria-live="polite">Aguardando a fila.</output>
-    <p class="note">A leitura roda numa aba separada. A cada 100 cartas, preços e progresso são publicados no GitHub; use “Retomar checkpoint do GitHub” em outro computador. Se a Liga pedir verificação, conclua manualmente na aba da coleta e depois retome.</p>
+    <p class="note">A leitura roda numa aba separada. Preços e progresso são publicados a cada 10 minutos ou a cada 100 cartas, o que ocorrer primeiro. O contador mostra somente cartas confirmadas no GitHub; use “Retomar checkpoint do GitHub” em outro computador. Se a Liga pedir verificação, conclua manualmente na aba da coleta e depois retome.</p>
   </main>
   <script src="popup.js"></script>
 </body>

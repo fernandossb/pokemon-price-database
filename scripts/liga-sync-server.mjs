@@ -97,6 +97,12 @@ function extensionOrigin(origin) {
   }
 }
 
+function authorizedExtensionRequest(request, normalizedOrigin) {
+  const claimedId = String(request.headers['x-pokecard-extension-id'] || '').trim().toLowerCase();
+  if (!/^[a-p]{32}$/.test(claimedId)) return false;
+  return normalizedOrigin ? normalizedOrigin === `chrome-extension://${claimedId}` : true;
+}
+
 function readBody(request) {
   return new Promise((resolve, reject) => {
     let size = 0;
@@ -218,6 +224,14 @@ async function receivePriceCheckpoint(checkpoint) {
     completedIndices.add(index);
     batchCards.push({ ...card, captured: true, capturedAt: item.capturedAt,
       rowCount: Number(item.rowCount) || 0, unpricedRowCount: Number(item.unpricedRowCount) || 0,
+      unparsedRowCount: Number(item.unparsedRowCount) || 0,
+      unparsedRows: Array.isArray(item.unparsedRows) ? item.unparsedRows.slice(0, 500).map(row => ({
+        listingId: String(row?.listingId || '').slice(0, 120),
+        text: String(row?.text || '').slice(0, 180),
+        priceBrl: Number(row?.priceBrl) || null,
+        condition: String(row?.condition || '').slice(0, 12),
+        missing: ['language'],
+      })).filter(row => row.listingId) : [],
       offers: item.offers });
   }
   if (checkpoint.complete && completedIndices.size !== queue.cards.length) {
@@ -258,7 +272,7 @@ const server = http.createServer(async (request, response) => {
     response.setHeader('access-control-allow-origin', allowedExtensionOrigin);
     response.setHeader('vary', 'Origin');
     response.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
-    response.setHeader('access-control-allow-headers', 'content-type');
+    response.setHeader('access-control-allow-headers', 'content-type, x-pokecard-extension-id');
   }
   if (request.method === 'OPTIONS') {
     response.writeHead(204);
@@ -275,7 +289,7 @@ const server = http.createServer(async (request, response) => {
     return;
   }
   if (request.method === 'GET' && request.url === '/sync/resume') {
-    if (!allowedExtensionOrigin) {
+    if (!authorizedExtensionRequest(request, allowedExtensionOrigin)) {
       send(response, 403, { ok: false, error: `Origem não autorizada para o coletor POKECARD (recebida: ${origin || 'vazia'}).` });
       return;
     }
@@ -291,7 +305,7 @@ const server = http.createServer(async (request, response) => {
     send(response, 404, { ok: false, error: 'Rota não encontrada.' });
     return;
   }
-  if (!allowedExtensionOrigin) {
+  if (!authorizedExtensionRequest(request, allowedExtensionOrigin)) {
     send(response, 403, { ok: false, error: `Origem não autorizada para o coletor POKECARD (recebida: ${origin || 'vazia'}).` });
     return;
   }
