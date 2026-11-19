@@ -291,10 +291,14 @@ export async function fetchLigaPrintOffers({ card, edition, number, cardId, avai
   const localSnapshotPath = String(process.env.LIGA_OFFERS_FILE || '').trim();
   if (localSnapshotPath) {
     const snapshot = await getLocalOfferSnapshot(localSnapshotPath);
-    const validEnums = new Set(availableEnums.map(item => `${item.language}::${item.value}`));
+    const validEnums = new Set(availableEnums.map(item => item.value));
     const offers = [];
     for (const [key, group] of snapshot.groups) {
-      if (!key.startsWith(`${cardId}::`) || !validEnums.has(key.slice(cardId.length + 2))) continue;
+      const prefix = `${cardId}::`;
+      if (!key.startsWith(prefix)) continue;
+      const languageAndEnum = key.slice(prefix.length);
+      const separator = languageAndEnum.indexOf('::');
+      if (separator < 1 || !validEnums.has(languageAndEnum.slice(separator + 2))) continue;
       offers.push(...group);
     }
     return {

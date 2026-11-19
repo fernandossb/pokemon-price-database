@@ -164,6 +164,18 @@ async function processOne(summary) {
       if (!ligaOffers.has(key)) ligaOffers.set(key, []);
       ligaOffers.get(key).push(offer);
     }
+    // Some cards have TCGdex finish enums only in English even though the
+    // Liga explicitly labels the observed offers as Portuguese or Japanese.
+    // Add those observed languages to this print using its same-card finish
+    // catalog so each offer keeps its actual language in the published key.
+    const knownLanguages = new Set(loadedList.map(item => item.language));
+    const sharedEnums = [...new Map([...allEnums.values()].map(item => [item.value, item])).values()];
+    for (const language of new Set(fetched.offers.map(offer => offer.language))) {
+      if (knownLanguages.has(language)) continue;
+      loadedList.push({ card: primaryCard, language });
+      knownLanguages.add(language);
+      for (const item of sharedEnums) allEnums.set(`${language}::${item.value}`, { ...item, language });
+    }
   }
 
   for (const { card, language } of loadedList) {

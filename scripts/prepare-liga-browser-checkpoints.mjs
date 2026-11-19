@@ -10,6 +10,7 @@ const mergedOffersFile = 'work/ligapokemon-offers-merged.json';
 const aggregateCaptureFile = 'work/ligapokemon-browser-capture-aggregate.json';
 const processedFile = 'data/ligapokemon-browser-processed.json';
 const deltaCardIdsFile = 'work/ligapokemon-delta-card-ids.json';
+const MAPPING_VERSION = 2;
 
 async function exists(file) {
   try { await fs.access(file); return true; } catch { return false; }
@@ -83,6 +84,7 @@ if (progress.complete && completedIndices.length !== queue.cards.length) {
 let previousProcessed = null;
 try { previousProcessed = JSON.parse(await fs.readFile(processedFile, 'utf8')); } catch {}
 const sameQueue = previousProcessed?.schemaVersion === 1
+  && previousProcessed?.mappingVersion === MAPPING_VERSION
   && previousProcessed.queueId === progress.queueId
   && previousProcessed.catalogHash === progress.catalogHash
   && Array.isArray(previousProcessed.completedIndices);
@@ -98,6 +100,7 @@ await fs.writeFile(deltaCardIdsFile, JSON.stringify(newCards.map(card => String(
 await fs.writeFile(processedFile, JSON.stringify({
   schemaVersion: 1,
   source: 'ligapokemon-browser-processed',
+  mappingVersion: MAPPING_VERSION,
   queueId: progress.queueId,
   catalogHash: progress.catalogHash,
   completedIndices: nextProcessedIndices,

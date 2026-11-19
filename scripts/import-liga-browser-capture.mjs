@@ -53,9 +53,11 @@ for (const card of capture.cards) {
 }
 for (const card of capture.cards) {
   const byLanguage = new Map();
+  const sharedEnums = new Map();
   for (const { language, value } of card.availableEnums || []) {
     if (!byLanguage.has(language)) byLanguage.set(language, []);
     byLanguage.get(language).push({ value });
+    sharedEnums.set(value, { value });
   }
   for (const raw of card.offers || []) {
     const observedMs = Date.parse(String(raw.observedAt || ''));
@@ -66,9 +68,14 @@ for (const card of capture.cards) {
       continue;
     }
     for (const language of languages) {
-      const availableEnums = byLanguage.get(language) || [];
+      // TCGdex often exposes this print's finishes only under `en`, while the
+      // Liga row itself explicitly identifies a Portuguese/Japanese listing.
+      // Finish enums describe the print, not the language; reuse the same-card
+      // enum catalog, but keep the observed offer language unchanged.
+      const availableEnums = byLanguage.get(language)?.length
+        ? byLanguage.get(language) : [...sharedEnums.values()];
       if (!availableEnums.length) {
-        pendingMappings.push({ cardId: card.cardId, listingId: raw.listingId, language, reason: 'app_language_variant_unmapped' });
+        pendingMappings.push({ cardId: card.cardId, listingId: raw.listingId, language, reason: 'app_variant_catalog_unmapped' });
         continue;
       }
       let variantEnum;
