@@ -107,14 +107,17 @@ function extractOffers(container, card, observedAt) {
       unpricedRowCount += 1;
       continue;
     }
-    if (!listingId || !condition) {
-      issues.push({ listingId, text: text.slice(0, 180), missing: [!listingId && 'listingId', !condition && 'condition'].filter(Boolean) });
+    if (!listingId) {
+      issues.push({ listingId, text: text.slice(0, 180), missing: ['listingId'] });
       continue;
     }
-    if (!language) {
-      // Keep the row for later review, but never guess its language. One row
-      // with a missing flag must not stop the rest of the queue.
-      unparsedRows.push({ listingId, text: text.slice(0, 180), priceBrl, condition, missing: ['language'] });
+    if (!condition || !language) {
+      // Preserve incomplete rows for review without guessing fields or prices.
+      // A missing condition/language must not stop the rest of the queue.
+      unparsedRows.push({
+        listingId, text: text.slice(0, 180), priceBrl, condition, language,
+        missing: [!condition && 'condition', !language && 'language'].filter(Boolean),
+      });
       continue;
     }
     const extras = [...row.querySelectorAll('span,small,label,[class*="extra"],[class*="foil"]')]

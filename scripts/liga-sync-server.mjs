@@ -230,7 +230,10 @@ async function receivePriceCheckpoint(checkpoint) {
         text: String(row?.text || '').slice(0, 180),
         priceBrl: Number(row?.priceBrl) || null,
         condition: String(row?.condition || '').slice(0, 12),
-        missing: ['language'],
+        language: String(row?.language || '').slice(0, 20),
+        missing: Array.isArray(row?.missing)
+          ? row.missing.filter(field => ['language', 'condition'].includes(field))
+          : ['language'],
       })).filter(row => row.listingId) : [],
       offers: item.offers });
   }

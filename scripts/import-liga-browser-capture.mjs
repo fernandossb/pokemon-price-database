@@ -36,13 +36,17 @@ const pendingMappings = (previousSnapshot?.pendingMappings || [])
   .filter(item => !refreshedCardIds.has(String(item.cardId)));
 for (const card of capture.cards) {
   for (const row of (Array.isArray(card.unparsedRows) ? card.unparsedRows : []).slice(0, 500)) {
+    const missing = Array.isArray(row?.missing)
+      ? row.missing.filter(field => ['language', 'condition'].includes(field))
+      : ['language'];
     pendingMappings.push({
       cardId: String(card.cardId),
       listingId: String(row?.listingId || '').slice(0, 120),
-      reason: 'liga_language_unparsed',
-      language: '',
+      reason: missing.includes('condition') ? 'liga_condition_unparsed' : 'liga_language_unparsed',
+      language: String(row?.language || '').slice(0, 20),
       condition: String(row?.condition || '').slice(0, 12),
       priceBrl: Number(row?.priceBrl) || null,
+      missing,
       detail: String(row?.text || '').slice(0, 180),
     });
   }
