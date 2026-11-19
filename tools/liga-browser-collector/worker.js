@@ -1,8 +1,8 @@
 const DB_NAME = 'pokecard-liga-browser-collector';
 const DB_VERSION = 2;
-// Randomized pacing: wait 20–40 seconds between successfully captured pages.
-const MIN_PAGE_DELAY_MS = 20_000;
-const MAX_PAGE_DELAY_MS = 40_000;
+// Randomized pacing: wait 5–10 seconds between successfully captured pages.
+const MIN_PAGE_DELAY_MS = 5_000;
+const MAX_PAGE_DELAY_MS = 10_000;
 const PAGE_RETRY_DELAY_MS = 60_000;
 const MAX_PAGE_RETRIES = 6;
 const MAX_RETRY_DELAY_MS = 30 * 60_000;
