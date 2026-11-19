@@ -2,7 +2,7 @@
   "schemaVersion": 4,
   "format": "sharded-v2",
   "status": "complete",
-  "generatedAt": "2026-11-19T12:34:42.660Z",
+  "generatedAt": "2026-11-19T13:00:22.247Z",
   "date": "2026-11-19",
   "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
   "cardsInCatalog": 37054,
@@ -26,123 +26,83 @@
   "variantsDiscovered": 98627,
   "variantsPriced": 162,
   "unmatched": 98465,
-  "changedPrices": 30,
+  "changedPrices": 0,
   "workers": [
     {
       "schemaVersion": 4,
       "shardIndex": 0,
       "shardCount": 12,
       "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
-      "generatedAt": "2026-11-19T12:34:37.827Z",
+      "generatedAt": "2026-11-19T13:00:16.951Z",
       "cardsAssigned": 3088,
-      "cardsProcessed": 4,
+      "cardsProcessed": 5,
       "variantsDiscovered": 8158,
       "variantsPriced": 12,
       "unmatched": 8146,
       "priceSource": "ligapokemon",
-      "ligaSnapshotId": "local-20261119123431",
-      "ligaFetchedAtMin": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtMax": "2026-11-19T12:34:31.803Z",
+      "ligaSnapshotId": "local-20261119130012",
+      "ligaFetchedAtMin": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtMax": "2026-11-19T13:00:12.922Z",
       "ligaFetchedAtSources": [
         "snapshot-captured-at"
       ],
-      "ligaOffersCount": 54
+      "ligaOffersCount": 62
     },
     {
       "schemaVersion": 4,
       "shardIndex": 1,
       "shardCount": 12,
       "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
-      "generatedAt": "2026-11-19T12:34:37.933Z",
+      "generatedAt": "2026-11-19T13:00:16.987Z",
       "cardsAssigned": 3088,
       "cardsProcessed": 5,
       "variantsDiscovered": 8289,
       "variantsPriced": 13,
       "unmatched": 8276,
       "priceSource": "ligapokemon",
-      "ligaSnapshotId": "local-20261119123431",
-      "ligaFetchedAtMin": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtMax": "2026-11-19T12:34:31.803Z",
+      "ligaSnapshotId": "local-20261119130012",
+      "ligaFetchedAtMin": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtMax": "2026-11-19T13:00:12.922Z",
       "ligaFetchedAtSources": [
         "snapshot-captured-at"
       ],
-      "ligaOffersCount": 60
+      "ligaOffersCount": 73
     },
     {
       "schemaVersion": 4,
       "shardIndex": 2,
       "shardCount": 12,
       "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
-      "generatedAt": "2026-11-19T12:34:37.833Z",
+      "generatedAt": "2026-11-19T13:00:16.919Z",
       "cardsAssigned": 3088,
-      "cardsProcessed": 5,
+      "cardsProcessed": 4,
       "variantsDiscovered": 8166,
       "variantsPriced": 15,
       "unmatched": 8151,
       "priceSource": "ligapokemon",
-      "ligaSnapshotId": "local-20261119123431",
-      "ligaFetchedAtMin": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtMax": "2026-11-19T12:34:31.803Z",
+      "ligaSnapshotId": "local-20261119130012",
+      "ligaFetchedAtMin": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtMax": "2026-11-19T13:00:12.922Z",
       "ligaFetchedAtSources": [
         "snapshot-captured-at"
       ],
-      "ligaOffersCount": 58
+      "ligaOffersCount": 68
     },
     {
       "schemaVersion": 4,
       "shardIndex": 3,
       "shardCount": 12,
       "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
-      "generatedAt": "2026-11-19T12:34:38.605Z",
+      "generatedAt": "2026-11-19T13:00:17.790Z",
       "cardsAssigned": 3088,
-      "cardsProcessed": 4,
+      "cardsProcessed": 5,
       "variantsDiscovered": 8280,
       "variantsPriced": 14,
       "unmatched": 8266,
       "priceSource": "ligapokemon",
-      "ligaSnapshotId": "local-20261119123431",
-      "ligaFetchedAtMin": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtMax": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtSources": [
-        "snapshot-captured-at"
-      ],
-      "ligaOffersCount": 55
-    },
-    {
-      "schemaVersion": 4,
-      "shardIndex": 4,
-      "shardCount": 12,
-      "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
-      "generatedAt": "2026-11-19T12:34:38.665Z",
-      "cardsAssigned": 3088,
-      "cardsProcessed": 4,
-      "variantsDiscovered": 8222,
-      "variantsPriced": 14,
-      "unmatched": 8208,
-      "priceSource": "ligapokemon",
-      "ligaSnapshotId": "local-20261119123431",
-      "ligaFetchedAtMin": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtMax": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtSources": [
-        "snapshot-captured-at"
-      ],
-      "ligaOffersCount": 56
-    },
-    {
-      "schemaVersion": 4,
-      "shardIndex": 5,
-      "shardCount": 12,
-      "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
-      "generatedAt": "2026-11-19T12:34:38.691Z",
-      "cardsAssigned": 3088,
-      "cardsProcessed": 4,
-      "variantsDiscovered": 8289,
-      "variantsPriced": 14,
-      "unmatched": 8275,
-      "priceSource": "ligapokemon",
-      "ligaSnapshotId": "local-20261119123431",
-      "ligaFetchedAtMin": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtMax": "2026-11-19T12:34:31.803Z",
+      "ligaSnapshotId": "local-20261119130012",
+      "ligaFetchedAtMin": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtMax": "2026-11-19T13:00:12.922Z",
       "ligaFetchedAtSources": [
         "snapshot-captured-at"
       ],
@@ -150,19 +110,119 @@
     },
     {
       "schemaVersion": 4,
+      "shardIndex": 4,
+      "shardCount": 12,
+      "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
+      "generatedAt": "2026-11-19T13:00:17.805Z",
+      "cardsAssigned": 3088,
+      "cardsProcessed": 5,
+      "variantsDiscovered": 8222,
+      "variantsPriced": 14,
+      "unmatched": 8208,
+      "priceSource": "ligapokemon",
+      "ligaSnapshotId": "local-20261119130012",
+      "ligaFetchedAtMin": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtMax": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtSources": [
+        "snapshot-captured-at"
+      ],
+      "ligaOffersCount": 64
+    },
+    {
+      "schemaVersion": 4,
+      "shardIndex": 5,
+      "shardCount": 12,
+      "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
+      "generatedAt": "2026-11-19T13:00:17.901Z",
+      "cardsAssigned": 3088,
+      "cardsProcessed": 5,
+      "variantsDiscovered": 8289,
+      "variantsPriced": 14,
+      "unmatched": 8275,
+      "priceSource": "ligapokemon",
+      "ligaSnapshotId": "local-20261119130012",
+      "ligaFetchedAtMin": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtMax": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtSources": [
+        "snapshot-captured-at"
+      ],
+      "ligaOffersCount": 69
+    },
+    {
+      "schemaVersion": 4,
       "shardIndex": 6,
       "shardCount": 12,
       "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
-      "generatedAt": "2026-11-19T12:34:39.507Z",
+      "generatedAt": "2026-11-19T13:00:18.544Z",
       "cardsAssigned": 3088,
-      "cardsProcessed": 5,
+      "cardsProcessed": 4,
       "variantsDiscovered": 8170,
       "variantsPriced": 13,
       "unmatched": 8157,
       "priceSource": "ligapokemon",
-      "ligaSnapshotId": "local-20261119123431",
-      "ligaFetchedAtMin": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtMax": "2026-11-19T12:34:31.803Z",
+      "ligaSnapshotId": "local-20261119130012",
+      "ligaFetchedAtMin": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtMax": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtSources": [
+        "snapshot-captured-at"
+      ],
+      "ligaOffersCount": 56
+    },
+    {
+      "schemaVersion": 4,
+      "shardIndex": 7,
+      "shardCount": 12,
+      "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
+      "generatedAt": "2026-11-19T13:00:18.627Z",
+      "cardsAssigned": 3088,
+      "cardsProcessed": 5,
+      "variantsDiscovered": 8249,
+      "variantsPriced": 13,
+      "unmatched": 8236,
+      "priceSource": "ligapokemon",
+      "ligaSnapshotId": "local-20261119130012",
+      "ligaFetchedAtMin": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtMax": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtSources": [
+        "snapshot-captured-at"
+      ],
+      "ligaOffersCount": 62
+    },
+    {
+      "schemaVersion": 4,
+      "shardIndex": 8,
+      "shardCount": 12,
+      "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
+      "generatedAt": "2026-11-19T13:00:18.793Z",
+      "cardsAssigned": 3088,
+      "cardsProcessed": 5,
+      "variantsDiscovered": 8159,
+      "variantsPriced": 13,
+      "unmatched": 8146,
+      "priceSource": "ligapokemon",
+      "ligaSnapshotId": "local-20261119130012",
+      "ligaFetchedAtMin": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtMax": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtSources": [
+        "snapshot-captured-at"
+      ],
+      "ligaOffersCount": 61
+    },
+    {
+      "schemaVersion": 4,
+      "shardIndex": 9,
+      "shardCount": 12,
+      "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
+      "generatedAt": "2026-11-19T13:00:19.362Z",
+      "cardsAssigned": 3088,
+      "cardsProcessed": 5,
+      "variantsDiscovered": 8256,
+      "variantsPriced": 13,
+      "unmatched": 8243,
+      "priceSource": "ligapokemon",
+      "ligaSnapshotId": "local-20261119130012",
+      "ligaFetchedAtMin": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtMax": "2026-11-19T13:00:12.922Z",
       "ligaFetchedAtSources": [
         "snapshot-captured-at"
       ],
@@ -170,111 +230,51 @@
     },
     {
       "schemaVersion": 4,
-      "shardIndex": 7,
-      "shardCount": 12,
-      "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
-      "generatedAt": "2026-11-19T12:34:39.479Z",
-      "cardsAssigned": 3088,
-      "cardsProcessed": 5,
-      "variantsDiscovered": 8249,
-      "variantsPriced": 13,
-      "unmatched": 8236,
-      "priceSource": "ligapokemon",
-      "ligaSnapshotId": "local-20261119123431",
-      "ligaFetchedAtMin": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtMax": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtSources": [
-        "snapshot-captured-at"
-      ],
-      "ligaOffersCount": 55
-    },
-    {
-      "schemaVersion": 4,
-      "shardIndex": 8,
-      "shardCount": 12,
-      "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
-      "generatedAt": "2026-11-19T12:34:39.527Z",
-      "cardsAssigned": 3088,
-      "cardsProcessed": 5,
-      "variantsDiscovered": 8159,
-      "variantsPriced": 13,
-      "unmatched": 8146,
-      "priceSource": "ligapokemon",
-      "ligaSnapshotId": "local-20261119123431",
-      "ligaFetchedAtMin": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtMax": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtSources": [
-        "snapshot-captured-at"
-      ],
-      "ligaOffersCount": 55
-    },
-    {
-      "schemaVersion": 4,
-      "shardIndex": 9,
-      "shardCount": 12,
-      "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
-      "generatedAt": "2026-11-19T12:34:40.393Z",
-      "cardsAssigned": 3088,
-      "cardsProcessed": 5,
-      "variantsDiscovered": 8256,
-      "variantsPriced": 13,
-      "unmatched": 8243,
-      "priceSource": "ligapokemon",
-      "ligaSnapshotId": "local-20261119123431",
-      "ligaFetchedAtMin": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtMax": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtSources": [
-        "snapshot-captured-at"
-      ],
-      "ligaOffersCount": 47
-    },
-    {
-      "schemaVersion": 4,
       "shardIndex": 10,
       "shardCount": 12,
       "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
-      "generatedAt": "2026-11-19T12:34:40.428Z",
+      "generatedAt": "2026-11-19T13:00:19.448Z",
       "cardsAssigned": 3087,
       "cardsProcessed": 5,
       "variantsDiscovered": 8162,
       "variantsPriced": 14,
       "unmatched": 8148,
       "priceSource": "ligapokemon",
-      "ligaSnapshotId": "local-20261119123431",
-      "ligaFetchedAtMin": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtMax": "2026-11-19T12:34:31.803Z",
+      "ligaSnapshotId": "local-20261119130012",
+      "ligaFetchedAtMin": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtMax": "2026-11-19T13:00:12.922Z",
       "ligaFetchedAtSources": [
         "snapshot-captured-at"
       ],
-      "ligaOffersCount": 58
+      "ligaOffersCount": 69
     },
     {
       "schemaVersion": 4,
       "shardIndex": 11,
       "shardCount": 12,
       "catalogHash": "74b2dd28859ca2d829bfc492af4d991836a227aa5ef35b8a4e37e05f7fbfc1f2",
-      "generatedAt": "2026-11-19T12:34:40.380Z",
+      "generatedAt": "2026-11-19T13:00:19.654Z",
       "cardsAssigned": 3087,
       "cardsProcessed": 5,
       "variantsDiscovered": 8227,
       "variantsPriced": 14,
       "unmatched": 8213,
       "priceSource": "ligapokemon",
-      "ligaSnapshotId": "local-20261119123431",
-      "ligaFetchedAtMin": "2026-11-19T12:34:31.803Z",
-      "ligaFetchedAtMax": "2026-11-19T12:34:31.803Z",
+      "ligaSnapshotId": "local-20261119130012",
+      "ligaFetchedAtMin": "2026-11-19T13:00:12.922Z",
+      "ligaFetchedAtMax": "2026-11-19T13:00:12.922Z",
       "ligaFetchedAtSources": [
         "snapshot-captured-at"
       ],
-      "ligaOffersCount": 66
+      "ligaOffersCount": 76
     }
   ],
   "priceSource": "ligapokemon",
-  "ligaSnapshotId": "local-20261119123431",
-  "ligaFetchedAtMin": "2026-11-19T12:34:31.803Z",
-  "ligaFetchedAtMax": "2026-11-19T12:34:31.803Z",
+  "ligaSnapshotId": "local-20261119130012",
+  "ligaFetchedAtMin": "2026-11-19T13:00:12.922Z",
+  "ligaFetchedAtMax": "2026-11-19T13:00:12.922Z",
   "ligaFetchedAtSources": [
     "snapshot-captured-at"
   ],
-  "ligaOffersCount": 680
+  "ligaOffersCount": 776
 }
