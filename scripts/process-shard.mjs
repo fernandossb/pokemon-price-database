@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import { getCard } from './providers/tcgdex.mjs';
-import { assertLigaSnapshotCoversCatalog, fetchLigaPrintOffers, summarizeLigaOffers } from './providers/ligaPokemon.mjs';
+import { assertLigaSnapshotCoversCatalog, fetchLigaPrintOffers, summarizeLigaOffers, MAX_BROWSER_SNAPSHOT_AGE_MS } from './providers/ligaPokemon.mjs';
 import { config, nowIso, readJson, sleep, variantCatalog } from './lib.mjs';
 
 const shardIndex = Number(process.env.SHARD_INDEX);
@@ -15,7 +15,19 @@ if (!catalog?.cards?.length) throw new Error('work/catalog.json ausente ou vazio
 const sourceSnapshot = await assertLigaSnapshotCoversCatalog(catalog);
 const snapshotId = String(process.env.LIGA_SNAPSHOT_ID || '');
 if (!snapshotId) throw new Error('LIGA_SNAPSHOT_ID ausente; coleta cancelada.');
-const cards = catalog.cards.filter((_, index) => index % shardCount === shardIndex);
+const assignedCards = catalog.cards.filter((_, index) => index % shardCount === shardIndex);
+const deltaIdsFile = String(process.env.LIGA_DELTA_CARD_IDS_FILE || '').trim();
+const requestedDeltaIds = deltaIdsFile ? await readJson(deltaIdsFile, null) : null;
+const previousShard = await readJson(`output/shards/shard-${shardTag}.json`, null);
+const canReusePrevious = Boolean(sourceSnapshot && Array.isArray(requestedDeltaIds)
+  && previousShard?.meta?.format === 'price-shard-v2'
+  && Number(previousShard.meta.schemaVersion) === 4
+  && previousShard.meta.catalogHash === catalog.hash
+  && Number(previousShard.meta.shardIndex) === shardIndex);
+const deltaIds = new Set(Array.isArray(requestedDeltaIds) ? requestedDeltaIds.map(String) : []);
+const cards = canReusePrevious
+  ? assignedCards.filter(card => deltaIds.has(String(card.id)))
+  : assignedCards;
 // O TCGdex só fornece catálogo/variantes. Os preços deste lote vêm de chamadas
 // live à Liga; nenhuma fonte nem cache anterior pode preencher uma ausência.
 const ligaOffers = new Map();
@@ -30,11 +42,40 @@ if (sourceSnapshot) {
   ligaFetchedAtSources.add(sourceSnapshot.source);
 }
 
-// Recriar de zero: um preço que não veio do snapshot atual da Liga não pode
-// sobreviver por reaproveitamento de cache.
-const prices = {};
-const variantsByCard = {};
-const unmatched = [];
+// For checkpoint runs, preserve only validated prices from the last published
+// snapshot for cards outside this delta; changed cards are recalculated below.
+// Stale offers and prices are removed using the same 30-day snapshot window.
+const prices = canReusePrevious ? { ...(previousShard.prices || {}) } : {};
+const variantsByCard = canReusePrevious ? { ...(previousShard.variantCatalog || {}) } : {};
+let unmatched = [];
+if (canReusePrevious) {
+  const oldUnmatched = await readJson('output/unmatched-cards.json', []);
+  const assignedIds = new Set(assignedCards.map(card => String(card.id)));
+  unmatched = Array.isArray(oldUnmatched) ? oldUnmatched.filter(item => assignedIds.has(String(item.id))) : [];
+  const changedIds = new Set(cards.map(card => String(card.id)));
+  const expired = [];
+  for (const [key, value] of Object.entries(prices)) {
+    const cardId = String(value?.cardId || key.split('::', 1)[0]);
+    if (changedIds.has(cardId)) {
+      delete prices[key];
+      continue;
+    }
+    const sources = Array.isArray(value?.sources) ? value.sources : [];
+    if (!sources.length || sources.some(source => {
+      const observedAt = Date.parse(String(source?.observedAt || ''));
+      return !Number.isFinite(observedAt) || observedAt < Date.now() - MAX_BROWSER_SNAPSHOT_AGE_MS;
+    })) {
+      expired.push({ id: cardId, language: value?.language, variantEnum: value?.variantEnum,
+        sources: value?.enumSources || [], reason: 'liga_price_expired', checkedAt: nowIso() });
+      delete prices[key];
+    }
+  }
+  for (const cardId of changedIds) delete variantsByCard[cardId];
+  const expiredKeys = new Set(expired.map(item => `${item.id}::${item.language || ''}::${item.variantEnum || ''}`));
+  unmatched = unmatched.filter(item => !changedIds.has(String(item.id))
+    && !expiredKeys.has(`${item.id}::${item.language || ''}::${item.variantEnum || ''}`));
+  unmatched.push(...expired);
+}
 let cursor = 0;
 
 async function fetchAllLanguages(summary) {
@@ -209,6 +250,22 @@ async function worker() {
 const concurrency = Math.max(1, config.maxConcurrentRequestsPerShard || 4);
 await Promise.all(Array.from({ length: concurrency }, () => worker()));
 
+for (const [cardId, variants] of Object.entries(variantsByCard)) {
+  const priced = new Set(Object.values(prices)
+    .filter(item => String(item?.cardId || '') === cardId)
+    .map(item => `${item.language}::${item.variantEnum}`));
+  for (const item of variants || []) item.priced = priced.has(`${item.language}::${item.value}`);
+}
+
+if (sourceSnapshot) {
+  const catalogIndex = new Map(catalog.cards.map((card, index) => [String(card.id), index % shardCount]));
+  ligaOfferCount = 0;
+  for (const [key, offers] of sourceSnapshot.groups) {
+    const cardId = key.split('::', 1)[0];
+    if (catalogIndex.get(cardId) === shardIndex) ligaOfferCount += offers.length;
+  }
+}
+
 await fs.mkdir('work/shards', { recursive: true });
 const result = {
   meta: {
@@ -217,7 +274,8 @@ const result = {
     shardCount,
     catalogHash: catalog.hash,
     generatedAt: nowIso(),
-    cardsAssigned: cards.length,
+    cardsAssigned: assignedCards.length,
+    cardsProcessed: cards.length,
     variantsDiscovered: Object.values(variantsByCard).reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0),
     variantsPriced: Object.keys(prices).length,
     unmatched: unmatched.length,

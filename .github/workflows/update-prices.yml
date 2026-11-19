@@ -12,6 +12,7 @@ on:
       - scripts/import-liga-browser-capture.mjs
       - scripts/prepare-liga-browser-checkpoints.mjs
       - scripts/providers/ligaPokemon.mjs
+      - scripts/process-shard.mjs
 
 permissions:
   contents: write
@@ -47,6 +48,6 @@ jobs:
         run: |
           git config user.name "pokemon-price-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add output/ cache/shards/ history/ data/ligapokemon-offers.json
+          git add output/ cache/shards/ history/ data/ligapokemon-offers.json data/ligapokemon-browser-processed.json
           git diff --cached --quiet || git commit -m "Atualizar preços Liga Pokémon $(date -u +%F)"
           git push

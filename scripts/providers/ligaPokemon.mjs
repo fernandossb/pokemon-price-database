@@ -282,7 +282,7 @@ export async function assertLigaSnapshotCoversCatalog(catalog) {
   if (snapshot.coverage.catalogHash !== catalog.hash || snapshot.coverage.cardCount !== catalog.count) {
     throw new Error('O snapshot local da Liga não cobre exatamente o catálogo TCGdex deste processamento.');
   }
-  return { capturedAt: snapshot.capturedAt, offerCount: snapshot.offerCount, source: 'snapshot-captured-at' };
+  return { capturedAt: snapshot.capturedAt, offerCount: snapshot.offerCount, groups: snapshot.groups, source: 'snapshot-captured-at' };
 }
 
 export async function fetchLigaPrintOffers({ card, edition, number, cardId, availableEnums,

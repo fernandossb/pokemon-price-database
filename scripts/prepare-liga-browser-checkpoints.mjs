@@ -8,6 +8,8 @@ const queueFile = 'data/ligapokemon-browser-queue.json';
 const offersFile = 'data/ligapokemon-offers.json';
 const mergedOffersFile = 'work/ligapokemon-offers-merged.json';
 const aggregateCaptureFile = 'work/ligapokemon-browser-capture-aggregate.json';
+const processedFile = 'data/ligapokemon-browser-processed.json';
+const deltaCardIdsFile = 'work/ligapokemon-delta-card-ids.json';
 
 async function exists(file) {
   try { await fs.access(file); return true; } catch { return false; }
@@ -78,6 +80,30 @@ if (progress.complete && completedIndices.length !== queue.cards.length) {
   throw new Error('O índice marca a coleta completa, mas ainda faltam cartas.');
 }
 
+let previousProcessed = null;
+try { previousProcessed = JSON.parse(await fs.readFile(processedFile, 'utf8')); } catch {}
+const sameQueue = previousProcessed?.schemaVersion === 1
+  && previousProcessed.queueId === progress.queueId
+  && previousProcessed.catalogHash === progress.catalogHash
+  && Array.isArray(previousProcessed.completedIndices);
+const processedIndices = new Set(sameQueue ? previousProcessed.completedIndices : []);
+const newIndices = completedIndices.filter(index => !processedIndices.has(index));
+const newCards = newIndices.map(index => cardsById.get(String(queue.cards[index]?.cardId))).filter(Boolean);
+if (newCards.length !== newIndices.length) {
+  throw new Error('Há novos índices completos sem captura correspondente; nenhum marcador foi avançado.');
+}
+const nextProcessedIndices = [...new Set([...processedIndices, ...completedIndices])].sort((a, b) => a - b);
+await fs.mkdir('work', { recursive: true });
+await fs.writeFile(deltaCardIdsFile, JSON.stringify(newCards.map(card => String(card.cardId))));
+await fs.writeFile(processedFile, JSON.stringify({
+  schemaVersion: 1,
+  source: 'ligapokemon-browser-processed',
+  queueId: progress.queueId,
+  catalogHash: progress.catalogHash,
+  completedIndices: nextProcessedIndices,
+  processedAt: new Date().toISOString(),
+}));
+
 const capture = {
   schemaVersion: 1,
   source: 'ligapokemon-browser-capture',
@@ -88,11 +114,11 @@ const capture = {
     eligibleCardCount: queue.cards.length,
     excludedCardCount: queue.excluded.length,
     capturedCardCount: completedIndices.length,
-    batchCardCount: cardsById.size,
+    batchCardCount: newCards.length,
     complete: progress.complete === true,
   },
   excluded: queue.excluded,
-  cards: [...cardsById.values()],
+  cards: newCards,
 };
 await fs.mkdir('work', { recursive: true });
 await fs.writeFile(aggregateCaptureFile, JSON.stringify(capture));
@@ -107,4 +133,5 @@ await runImporter(aggregateCaptureFile);
 // replace offers by captured card instead of losing them in runner temp files.
 await fs.copyFile(mergedOffersFile, offersFile);
 if (process.env.GITHUB_ENV) await fs.appendFile(process.env.GITHUB_ENV, `LIGA_OFFERS_FILE=${mergedOffersFile}\n`);
-console.log(`Checkpoints preparados: ${cardsById.size}/${queue.cards.length} cartas; fila ${progress.complete ? 'completa' : 'em andamento'}.`);
+if (process.env.GITHUB_ENV) await fs.appendFile(process.env.GITHUB_ENV, `LIGA_DELTA_CARD_IDS_FILE=${deltaCardIdsFile}\n`);
+console.log(`Checkpoints preparados: ${newCards.length} novas/alteradas; ${completedIndices.length}/${queue.cards.length} acumuladas; fila ${progress.complete ? 'completa' : 'em andamento'}.`);
