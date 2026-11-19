@@ -102,6 +102,9 @@ await fs.copyFile(offersFile, mergedOffersFile).catch(async () => {
     pendingMappings: [], offers: [] }));
 });
 await runImporter(aggregateCaptureFile);
-if (progress.complete) await fs.copyFile(mergedOffersFile, offersFile);
+// The progress file is cumulative even while the queue is still running. Save
+// each validated partial snapshot so the next Actions run can retain and
+// replace offers by captured card instead of losing them in runner temp files.
+await fs.copyFile(mergedOffersFile, offersFile);
 if (process.env.GITHUB_ENV) await fs.appendFile(process.env.GITHUB_ENV, `LIGA_OFFERS_FILE=${mergedOffersFile}\n`);
 console.log(`Checkpoints preparados: ${cardsById.size}/${queue.cards.length} cartas; fila ${progress.complete ? 'completa' : 'em andamento'}.`);

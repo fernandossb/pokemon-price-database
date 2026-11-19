@@ -9,6 +9,9 @@ on:
       - data/ligapokemon-browser-progress.json
       - data/ligapokemon-browser-checkpoints/**
       - .github/workflows/update-prices.yml
+      - scripts/import-liga-browser-capture.mjs
+      - scripts/prepare-liga-browser-checkpoints.mjs
+      - scripts/providers/ligaPokemon.mjs
 
 permissions:
   contents: write

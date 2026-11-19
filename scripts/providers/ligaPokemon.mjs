@@ -125,11 +125,28 @@ export function offerLanguages(raw) {
   return language ? [language] : [];
 }
 
+function cleanLigaFinishText(value) {
+  const tokens = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/)
+    .filter(token => token && token !== 'comprar')
+    .flatMap(token => token === 'foilpromo' ? ['foil', 'promo'] : [token]);
+  // The Liga page collector can capture the same finish once per responsive
+  // control/button. Collapse repeated cycles such as "foil foil foil" while
+  // preserving meaningful multiword finishes like "shattered holo".
+  for (let size = 1; size <= Math.floor(tokens.length / 2); size += 1) {
+    if (tokens.length % size !== 0) continue;
+    if (tokens.every((token, index) => token === tokens[index % size])) {
+      return tokens.slice(0, size).join(' ');
+    }
+  }
+  return tokens.join(' ');
+}
+
 export function enumForLigaOffer(raw, availableEnums) {
-  const extras = Array.isArray(raw?.extras) ? raw.extras.join(' ') : String(raw?.extras || '');
-  const finishLabel = [raw?.finish, raw?.finish_name, raw?.foil_name, raw?.variant].find(Boolean) || '';
-  const description = [finishLabel, extras]
-    .filter(Boolean).join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const finishLabel = [raw?.finish, raw?.finish_name, raw?.foil_name, raw?.variant]
+    .map(cleanLigaFinishText).find(Boolean) || '';
+  const extras = cleanLigaFinishText(Array.isArray(raw?.extras) ? raw.extras.join(' ') : raw?.extras);
+  const description = finishLabel || extras;
   const enums = new Set(availableEnums.map(item => item.value));
   const specialFoils = [...enums]
     .filter(value => /-holofoil$/.test(value) && !['holofoil', 'reverse-holofoil', '1st-edition-holofoil'].includes(value))
@@ -166,7 +183,7 @@ export function enumForLigaOffer(raw, availableEnums) {
   }
   const normalizedFinish = String(finishLabel).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  const genericFoilLabels = new Set(['foil', 'holo', 'holofoil', 'holo foil', 'regular holo', 'standard holo', 'normal holo']);
+  const genericFoilLabels = new Set(['foil', 'foil promo', 'promo foil', 'holo', 'holofoil', 'holo foil', 'regular holo', 'standard holo', 'normal holo']);
   if (normalizedFinish && !genericFoilLabels.has(normalizedFinish)) {
     throw new Error(`Acabamento foil não reconhecido com segurança na Liga: ${finishLabel}`);
   }
