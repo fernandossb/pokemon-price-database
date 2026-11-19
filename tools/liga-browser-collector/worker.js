@@ -959,10 +959,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     if (message?.type === 'SYNC_COMPLETE') {
       const job = await getJob();
-      if (!job || job.status !== 'complete') throw new Error('A busca ainda não terminou; o envio automático ocorre ao completar.');
-      await syncCompletedSearch(job);
+      if (!job?.queue?.cards?.length) {
+        if (job?.mode === 'edition-discovery' && job.status === 'complete') {
+          await syncCompletedSearch(job);
+          const latest = await getJob();
+          sendResponse({ ok: true, message: latest?.reason || 'Índice enviado; fila de preços preparada.' });
+          return;
+        }
+        throw new Error('Nenhuma fila de preços está carregada.');
+      }
+      if (job.status === 'complete') {
+        await syncCompletedSearch(job);
+        const latest = await getJob();
+        sendResponse({ ok: true, message: latest?.reason || 'Busca final enviada ao pokemon-price-database.' });
+        return;
+      }
+      const result = await syncPriceCheckpoint(job, false);
       const latest = await getJob();
-      sendResponse({ ok: true, message: latest?.reason || 'Sincronização enviada.' });
+      const stateMessage = latest?.status === 'running' ? 'A coleta continua.'
+        : latest?.status === 'paused' ? 'A coleta permanece pausada.'
+          : latest?.status === 'ready' ? 'A fila continua pronta para iniciar.' : '';
+      sendResponse({ ok: true, message: `${result.message || 'Checkpoint sincronizado.'}${stateMessage ? ` ${stateMessage}` : ''}` });
       return;
     }
     sendResponse({ ok: false, error: 'Ação desconhecida.' });
