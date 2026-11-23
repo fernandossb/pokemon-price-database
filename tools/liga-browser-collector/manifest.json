@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "POKECARD · Coletor da Liga",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Coleta anúncios em checkpoints, retoma pelo GitHub e pausa diante de desafios ou bloqueios da Liga.",
   "permissions": ["alarms", "webNavigation", "webRequest"],
   "host_permissions": [

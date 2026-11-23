@@ -199,7 +199,7 @@ async function saveJob(job) {
   return writeRecord('state', storedJob(job));
 }
 
-async function replaceCollectionData(job, remoteIds = new Set()) {
+async function replaceCollectionData(job, remoteIds = new Set(), preservedCaptures = []) {
   const db = await openDb();
   const value = storedJob(job);
   return new Promise((resolve, reject) => {
@@ -209,6 +209,11 @@ async function replaceCollectionData(job, remoteIds = new Set()) {
     tx.objectStore('queues').clear();
     for (const cardId of remoteIds) {
       tx.objectStore('cards').put({ cardId, checkpointed: true, remoteCheckpoint: true });
+    }
+    for (const record of preservedCaptures) {
+      if (remoteIds.has(String(record.cardId))) continue;
+      tx.objectStore('cards').put({ ...record, checkpointed: false, remoteCheckpoint: false,
+        pendingCheckpoint: 'pending' });
     }
     if (job.queue) {
       tx.objectStore('queues').put({ queueId: value.queueId, queue: job.queue });
@@ -350,6 +355,19 @@ function prioritizeQueue(queue, priorityIds, completedIds = new Set()) {
   return { ...queue, cards: [...completed, ...owned, ...remaining] };
 }
 
+function sameLigaPrintQueue(previousQueue, currentQueue) {
+  if (!Array.isArray(previousQueue?.cards) || !Array.isArray(currentQueue?.cards)
+    || previousQueue.catalogHash !== currentQueue.catalogHash
+    || previousQueue.cards.length !== currentQueue.cards.length) return false;
+  const previousById = new Map(previousQueue.cards.map(card => [String(card.cardId), card]));
+  return currentQueue.cards.every(card => {
+    const previous = previousById.get(String(card.cardId));
+    return previous && previous.edition === card.edition
+      && String(previous.number) === String(card.number)
+      && previous.detailUrl === card.detailUrl;
+  });
+}
+
 async function getRemoteResume() {
   const response = await fetch(RESUME_SYNC_URL, {
     cache: 'no-store',
@@ -369,18 +387,35 @@ async function installAndStartQueue(queue, tabId, progress = null) {
     throw new Error('O Price Database devolveu uma fila incompleta ou incompatível.');
   }
   const queueIdentity = currentQueueId(queue);
+  const previousJob = await getJob();
   const remoteIds = new Set(progress?.queueId === queueIdentity
     && progress?.catalogHash === queue.catalogHash && Array.isArray(progress.cardIds)
     ? progress.cardIds.map(String) : []);
-  queue = prioritizeQueue(queue, await getOwnedPriorityIds(), remoteIds);
-  const index = queue.cards.findIndex(card => !remoteIds.has(String(card.cardId)));
+  const resetAt = Date.parse(String(queue.resetAt || queue.generatedAt || ''));
+  const canRebaseLocalCaptures = previousJob?.mode === 'card-prices'
+    && previousJob.queueId === queue.supersedesQueueId
+    && sameLigaPrintQueue(previousJob.queue, queue)
+    && Number.isFinite(resetAt);
+  const preservedCaptures = canRebaseLocalCaptures
+    ? (await allRecords('cards')).filter(record => !record.remoteCheckpoint
+      && !remoteIds.has(String(record.cardId))
+      && Number.isFinite(Date.parse(String(record.capturedAt || '')))
+      && Date.parse(record.capturedAt) >= resetAt && Array.isArray(record.offers))
+    : [];
+  const preservedIds = new Set(preservedCaptures.map(record => String(record.cardId)));
+  const completedIds = new Set([...remoteIds, ...preservedIds]);
+  queue = prioritizeQueue(queue, await getOwnedPriorityIds(), completedIds);
+  const index = queue.cards.findIndex(card => !completedIds.has(String(card.cardId)));
   const job = {
     mode: 'card-prices', queue, queueId: queueIdentity, status: 'running',
     index: index < 0 ? queue.cards.length : index, tabId,
-    inFlight: false, retryCount: 0, remoteCapturedCount: remoteIds.size, pendingRemoteCount: 0,
-    reason: remoteIds.size ? `Retomando do checkpoint remoto: ${remoteIds.size} cartas já salvas.` : 'Versões salvas no Price Database; iniciando a leitura dos anúncios.', importedAt: new Date().toISOString(),
+    inFlight: false, retryCount: 0, remoteCapturedCount: remoteIds.size, pendingRemoteCount: preservedCaptures.length,
+    reason: preservedCaptures.length
+      ? `Fila atualizada; preservando ${preservedCaptures.length} capturas locais feitas após o reset.`
+      : remoteIds.size ? `Retomando do checkpoint remoto: ${remoteIds.size} cartas já salvas.`
+        : 'Fila atualizada do GitHub; iniciando a leitura dos anúncios.', importedAt: new Date().toISOString(),
   };
-  await replaceCollectionData(job, remoteIds);
+  await replaceCollectionData(job, remoteIds, preservedCaptures);
   await chrome.action.setBadgeText({ text: '' });
   if (job.index >= queue.cards.length) {
     job.status = 'complete';
