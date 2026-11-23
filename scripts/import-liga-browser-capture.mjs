@@ -52,6 +52,7 @@ for (const card of capture.cards) {
   }
 }
 for (const card of capture.cards) {
+  const firstOfferByVariant = new Map();
   const byLanguage = new Map();
   const sharedEnums = new Map();
   for (const { language, value } of card.availableEnums || []) {
@@ -101,9 +102,13 @@ for (const card of capture.cards) {
         observedAt: raw.observedAt,
       }, Date.now(), MAX_BROWSER_SNAPSHOT_AGE_MS);
       if (!offer) errors.push(`${card.cardId}/${raw.listingId}: anúncio inválido ou vencido.`);
-      else offers.push(offer);
+      else {
+        const variantKey = `${offer.cardId}::${offer.language}::${offer.variantEnum}`;
+        if (!firstOfferByVariant.has(variantKey)) firstOfferByVariant.set(variantKey, offer);
+      }
     }
   }
+  offers.push(...firstOfferByVariant.values());
 }
 
 if (errors.length) {

@@ -22,30 +22,25 @@ function findLoadMoreControl() {
   return matches.find(element => element.matches('button, a, [role="button"], [onclick]')) || matches[0] || null;
 }
 
-async function expandListings(container) {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    const rowsBefore = container.querySelectorAll('[id^="mpline_1_"]').length;
-    const more = [...container.querySelectorAll('button,a,[role="button"],div,span')]
-      .find(element => visible(element) && normalizeText(element.textContent).toLocaleUpperCase('pt-BR') === 'VER MAIS');
-    if (!more) break;
-    more.click();
-    for (let wait = 0; wait < 20; wait += 1) {
-      await sleep(250);
-      if (container.querySelectorAll('[id^="mpline_1_"]').length > rowsBefore) break;
-    }
-    if (container.querySelectorAll('[id^="mpline_1_"]').length <= rowsBefore) break;
-  }
+async function prepareFirstOfferBatch(container) {
+  // Read the first rendered batch only. Liga orders offers by increasing price;
+  // loading every seller row adds time without improving the minimum per finish.
+  container.scrollIntoView({ block: 'start', behavior: 'instant' });
+  await sleep(180);
 }
 
-async function materializeOfferRows(container) {
-  // Liga lazy-loads part of each seller row only after it enters the viewport.
-  // Bring small batches into view so price, language flag and stock are ready
-  // before parsing; this uses the same rendered page as a human visitor.
-  const rows = [...container.querySelectorAll('[id^="mpline_1_"]')];
-  for (let index = 0; index < rows.length; index += 4) {
-    rows[Math.min(index + 3, rows.length - 1)]?.scrollIntoView({ block: 'center', behavior: 'instant' });
-    await sleep(180);
+function normalizeFinishGroup(value, isFoil) {
+  const tokens = String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/)
+    .filter(token => token && !['comprar', 'nm', 'm', 'sp', 'mp', 'hp', 'd'].includes(token))
+    .flatMap(token => token === 'foilpromo' ? ['foil', 'promo'] : [token]);
+  for (let size = 1; size <= Math.floor(tokens.length / 2); size += 1) {
+    if (tokens.length % size !== 0) continue;
+    if (tokens.every((token, index) => token === tokens[index % size])) {
+      return tokens.slice(0, size).join(' ');
+    }
   }
+  return tokens.join(' ') || (isFoil ? 'foil' : 'normal');
 }
 
 function normalizeLanguage(row) {
@@ -92,6 +87,7 @@ function extractOffers(container, card, observedAt) {
   const offers = [];
   const issues = [];
   const unparsedRows = [];
+  const seenVariantGroups = new Set();
   let unpricedRowCount = 0;
   for (const row of rows) {
     const listingId = row.id.match(/^mpline_1_(.+)$/)?.[1] || '';
@@ -123,6 +119,12 @@ function extractOffers(container, card, observedAt) {
       .map(element => normalizeText(element.textContent)).filter(Boolean);
     const finish = extras.join(' ') || text;
     const isFoil = /foil|holo|brilh/i.test(finish);
+    // Only market-price conditions are eligible downstream. Rows are ordered
+    // cheapest first, so keep the first eligible seller for each language/finish.
+    if (!['M', 'NM'].includes(condition)) continue;
+    const groupKey = `${language}::${normalizeFinishGroup(extras.join(' '), isFoil)}`;
+    if (seenVariantGroups.has(groupKey)) continue;
+    seenVariantGroups.add(groupKey);
     const seller = sellerFromRow(row, listingId);
     const quantityInput = row.querySelector(`#mpitem_${CSS.escape(listingId)}`);
     const stock = [...text.matchAll(/\bde\s+(\d+)\b/gi)].map(match => Number(match[1])).at(-1) || null;
@@ -364,8 +366,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       return { ok: false, reason: 'marketplace_container_missing' };
     }
-    await expandListings(container);
-    await materializeOfferRows(container);
+    await prepareFirstOfferBatch(container);
     const observedAt = new Date().toISOString();
     const result = extractOffers(container, card, observedAt);
     if (result.issues.length) return { ok: false, reason: 'unparsed_rows', ...result };
