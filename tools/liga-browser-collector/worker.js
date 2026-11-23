@@ -429,7 +429,7 @@ async function installAndStartQueue(queue, tabId, progress = null) {
   }
 }
 
-async function performPriceCheckpoint(job, complete = false) {
+async function performPriceCheckpoint(job, complete = false, allowQueueRecovery = true) {
   const queueCards = new Map(job.queue.cards.map(card => [String(card.cardId), card]));
   const captures = await pendingCardCaptures();
   if (!captures.length && !complete) {
@@ -450,7 +450,26 @@ async function performPriceCheckpoint(job, complete = false) {
         offers: record.offers };
     }),
   };
-  const result = await postSnapshot(CHECKPOINT_SYNC_URL, payload);
+  let result;
+  try {
+    result = await postSnapshot(CHECKPOINT_SYNC_URL, payload);
+  } catch (error) {
+    if (!allowQueueRecovery || !/fila local não corresponde à fila atual/i.test(String(error?.message || error))) throw error;
+    const remote = await getRemoteResume();
+    await installAndStartQueue(remote.queue, job.tabId, remote.progress);
+    const refreshedJob = await getJob();
+    if (!refreshedJob) throw error;
+    let message = refreshedJob.reason || 'Fila local atualizada a partir do GitHub.';
+    if (refreshedJob.pendingRemoteCount > 0) {
+      const migrated = await performPriceCheckpoint(refreshedJob, false, false);
+      message = `${migrated.message || message} A fila antiga foi substituída pela atual.`;
+    }
+    const currentJob = await getJob();
+    return { ok: true, recoveredQueue: true,
+      capturedCount: Number(currentJob?.remoteCapturedCount) || 0,
+      total: Number(currentJob?.queue?.cards?.length) || 0,
+      complete: false, committed: false, message };
+  }
   for (const record of captures) {
     record.checkpointed = true;
     delete record.pendingCheckpoint;
