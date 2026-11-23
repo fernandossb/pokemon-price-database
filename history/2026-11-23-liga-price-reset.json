@@ -1,0 +1,13 @@
+{
+  "date": "2026-11-23T13:38:57.904Z",
+  "event": "liga-price-reset",
+  "previousActiveLigaPrices": 895,
+  "previousActiveLigaOffers": 9904,
+  "previousCheckpointedCards": 875,
+  "activePricesAfterReset": 0,
+  "catalogCardsPreserved": 37054,
+  "variantsPreserved": 101169,
+  "editionCountPreserved": 813,
+  "eligibleQueueCardsPreserved": 19748,
+  "recoveryTag": "prices-before-liga-reset-2026-11-23"
+}
