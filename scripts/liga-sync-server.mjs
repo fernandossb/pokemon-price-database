@@ -136,11 +136,19 @@ async function publish(files, message) {
   const branch = process.env.LIGA_SYNC_BRANCH || 'main';
   const { stdout } = await run('git', ['branch', '--show-current']);
   if (!stdout.trim() || stdout.trim() === 'HEAD') throw new Error('O repositório precisa estar em uma branch para publicar.');
-  await run('git', ['pull', '--rebase', '--autostash', 'origin', branch]);
   await run('git', ['add', '--', ...files]);
   const changed = await run('git', ['diff', '--cached', '--name-only']);
   if (!changed.stdout.trim()) return { committed: false, branch };
   await run('git', ['-c', 'user.name=POKECARD Liga Sync', '-c', 'user.email=actions@users.noreply.github.com', 'commit', '-m', message]);
+  try {
+    // Commit the staged snapshot before rebasing. Autostash can leave conflict
+    // markers inside JSON progress files when another computer publishes at
+    // the same time; a failed rebase must never be committed as a checkpoint.
+    await run('git', ['pull', '--rebase', 'origin', branch]);
+  } catch (error) {
+    await run('git', ['rebase', '--abort']).catch(() => {});
+    throw new Error(`Conflito ao atualizar o GitHub em paralelo. O checkpoint local foi mantido; tente sincronizar novamente. ${error.message}`);
+  }
   await run('git', ['push', 'origin', `HEAD:${branch}`]);
   return { committed: true, branch };
 }
