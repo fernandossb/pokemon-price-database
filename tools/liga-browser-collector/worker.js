@@ -1,5 +1,5 @@
 const DB_NAME = 'pokecard-liga-browser-collector';
-const DB_VERSION = 2;
+const DB_VERSION = 5;
 // Randomized pacing: wait 5–10 seconds between successfully captured pages.
 const MIN_PAGE_DELAY_MS = 5_000;
 const MAX_PAGE_DELAY_MS = 10_000;
@@ -18,19 +18,94 @@ const CHECKPOINT_SYNC_URL = 'http://127.0.0.1:17835/sync/checkpoint';
 const RESUME_SYNC_URL = 'http://127.0.0.1:17835/sync/resume';
 let captureLock = false;
 let checkpointChain = Promise.resolve();
+let dbPromise = null;
+let queueCache = { queueId: '', queue: null };
 
 function openDb() {
-  return new Promise((resolve, reject) => {
+  if (dbPromise) return dbPromise;
+  const pending = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains('state')) db.createObjectStore('state', { keyPath: 'key' });
-      if (!db.objectStoreNames.contains('cards')) db.createObjectStore('cards', { keyPath: 'cardId' });
+      const state = db.objectStoreNames.contains('state')
+        ? request.transaction.objectStore('state')
+        : db.createObjectStore('state', { keyPath: 'key' });
+      const cards = db.objectStoreNames.contains('cards')
+        ? request.transaction.objectStore('cards')
+        : db.createObjectStore('cards', { keyPath: 'cardId' });
+      const queues = db.objectStoreNames.contains('queues')
+        ? request.transaction.objectStore('queues')
+        : db.createObjectStore('queues', { keyPath: 'queueId' });
+      if (!cards.indexNames.contains('pendingCheckpoint')) {
+        cards.createIndex('pendingCheckpoint', 'pendingCheckpoint');
+        const cursorRequest = cards.openCursor();
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result;
+          if (!cursor) return;
+          const record = cursor.value;
+          if (!record.checkpointed && !record.remoteCheckpoint
+            && Number.isFinite(Date.parse(String(record.capturedAt || '')))
+            && Array.isArray(record.offers)) {
+            cursor.update({ ...record, pendingCheckpoint: 'pending' });
+          }
+          cursor.continue();
+        };
+      }
+      // IndexedDB keys cannot be booleans. Migrate the v4 boolean marker to a
+      // string key so IDBIndex.getAll() can safely query pending captures.
+      if (request.oldVersion < 5) {
+        const cursorRequest = cards.openCursor();
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result;
+          if (!cursor) return;
+          const record = cursor.value;
+          const isPending = !record.checkpointed && !record.remoteCheckpoint
+            && Number.isFinite(Date.parse(String(record.capturedAt || '')))
+            && Array.isArray(record.offers);
+          if (isPending) record.pendingCheckpoint = 'pending';
+          else delete record.pendingCheckpoint;
+          cursor.update(record);
+          cursor.continue();
+        };
+      }
       if (!db.objectStoreNames.contains('editions')) db.createObjectStore('editions', { keyPath: 'editionId' });
+      if (request.oldVersion < 4) {
+        const cursorRequest = state.openCursor();
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result;
+          if (!cursor) return;
+          const job = cursor.value;
+          const queue = job.key === 'job' ? job.queue : null;
+          if (queue?.catalogHash && (job.queueId || queue.generatedAt)) {
+            const queueId = job.queueId || `${queue.catalogHash}:${queue.generatedAt}`;
+            queues.put({ queueId, queue });
+            const migratedJob = { ...job, queueId, queueStored: true };
+            delete migratedJob.queue;
+            cursor.update(migratedJob);
+          }
+          cursor.continue();
+        };
+      }
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => {
+        db.close();
+        if (dbPromise === pending) dbPromise = null;
+      };
+      resolve(db);
+    };
+    request.onerror = () => {
+      if (dbPromise === pending) dbPromise = null;
+      reject(request.error);
+    };
+    request.onblocked = () => {
+      if (dbPromise === pending) dbPromise = null;
+      reject(new Error('A atualização do banco local aguarda o fechamento de outra conexão.'));
+    };
   });
+  dbPromise = pending;
+  return pending;
 }
 
 async function readRecord(storeName, key) {
@@ -53,6 +128,19 @@ async function writeRecord(storeName, value) {
   });
 }
 
+async function writeRecords(storeName, values) {
+  if (!values.length) return;
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readwrite');
+    const store = tx.objectStore(storeName);
+    for (const value of values) store.put(value);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('A gravação do checkpoint foi cancelada.'));
+  });
+}
+
 async function allRecords(storeName) {
   const db = await openDb();
   return new Promise((resolve, reject) => {
@@ -63,8 +151,79 @@ async function allRecords(storeName) {
   });
 }
 
-const getJob = () => readRecord('state', 'job');
-const saveJob = job => writeRecord('state', { key: 'job', ...job });
+async function pendingCardCaptures() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('cards', 'readonly');
+    const request = tx.objectStore('cards').index('pendingCheckpoint').getAll('pending');
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function storedJob(job) {
+  // Keep the large, mostly immutable catalog out of the status row written
+  // after every page. The queue is persisted separately and cached per worker.
+  const value = { ...job, key: 'job' };
+  if (job.queue) {
+    value.queueId = job.queueId || currentQueueId(job.queue);
+    value.queueStored = true;
+    delete value.queue;
+  }
+  return value;
+}
+
+async function getJob() {
+  const job = await readRecord('state', 'job');
+  if (!job?.queueStored || !job.queueId) return job;
+  let queue = queueCache.queueId === job.queueId ? queueCache.queue : null;
+  if (!queue) {
+    const stored = await readRecord('queues', job.queueId);
+    if (!stored?.queue) throw new Error('A fila salva localmente não foi encontrada.');
+    queue = stored.queue;
+    queueCache = { queueId: job.queueId, queue };
+  }
+  return { ...job, queue };
+}
+
+async function saveJob(job) {
+  if (job.queue) {
+    const queueId = job.queueId || currentQueueId(job.queue);
+    if (queueCache.queueId !== queueId || queueCache.queue !== job.queue) {
+      await writeRecord('queues', { queueId, queue: job.queue });
+      queueCache = { queueId, queue: job.queue };
+    }
+    job.queueId = queueId;
+    job.queueStored = true;
+  }
+  return writeRecord('state', storedJob(job));
+}
+
+async function replaceCollectionData(job, remoteIds = new Set()) {
+  const db = await openDb();
+  const value = storedJob(job);
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['state', 'cards', 'editions', 'queues'], 'readwrite');
+    tx.objectStore('cards').clear();
+    tx.objectStore('editions').clear();
+    tx.objectStore('queues').clear();
+    for (const cardId of remoteIds) {
+      tx.objectStore('cards').put({ cardId, checkpointed: true, remoteCheckpoint: true });
+    }
+    if (job.queue) {
+      tx.objectStore('queues').put({ queueId: value.queueId, queue: job.queue });
+    }
+    tx.objectStore('state').put(value);
+    tx.oncomplete = () => {
+      queueCache = job.queue
+        ? { queueId: value.queueId, queue: job.queue }
+        : { queueId: '', queue: null };
+      resolve();
+    };
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('A atualização local da fila foi cancelada.'));
+  });
+}
 
 function ligaDetailUrl(card) {
   if (!card.detailUrl) throw new Error(`URL da versão observada na Liga ausente para ${card.cardId}.`);
@@ -209,7 +368,6 @@ async function installAndStartQueue(queue, tabId, progress = null) {
     || queue.cards.length + queue.excluded.length !== Number(queue.catalogCardCount)) {
     throw new Error('O Price Database devolveu uma fila incompleta ou incompatível.');
   }
-  const db = await openDb();
   const queueIdentity = currentQueueId(queue);
   const remoteIds = new Set(progress?.queueId === queueIdentity
     && progress?.catalogHash === queue.catalogHash && Array.isArray(progress.cardIds)
@@ -222,15 +380,7 @@ async function installAndStartQueue(queue, tabId, progress = null) {
     inFlight: false, retryCount: 0, remoteCapturedCount: remoteIds.size, pendingRemoteCount: 0,
     reason: remoteIds.size ? `Retomando do checkpoint remoto: ${remoteIds.size} cartas já salvas.` : 'Versões salvas no Price Database; iniciando a leitura dos anúncios.', importedAt: new Date().toISOString(),
   };
-  await new Promise((resolve, reject) => {
-    const tx = db.transaction(['state', 'cards', 'editions'], 'readwrite');
-    tx.objectStore('cards').clear();
-    tx.objectStore('editions').clear();
-    for (const cardId of remoteIds) tx.objectStore('cards').put({ cardId, checkpointed: true, remoteCheckpoint: true });
-    tx.objectStore('state').put({ key: 'job', ...job });
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error);
-  });
+  await replaceCollectionData(job, remoteIds);
   await chrome.action.setBadgeText({ text: '' });
   if (job.index >= queue.cards.length) {
     job.status = 'complete';
@@ -246,9 +396,7 @@ async function installAndStartQueue(queue, tabId, progress = null) {
 
 async function performPriceCheckpoint(job, complete = false) {
   const queueCards = new Map(job.queue.cards.map(card => [String(card.cardId), card]));
-  const captures = (await allRecords('cards')).filter(record => !record.checkpointed
-    && !record.remoteCheckpoint && Number.isFinite(Date.parse(String(record.capturedAt || '')))
-    && Array.isArray(record.offers));
+  const captures = await pendingCardCaptures();
   if (!captures.length && !complete) {
     return { ok: true, capturedCount: Number(job.remoteCapturedCount || 0), committed: false,
       message: 'Nenhuma carta nova aguardando publicação no GitHub.' };
@@ -270,8 +418,9 @@ async function performPriceCheckpoint(job, complete = false) {
   const result = await postSnapshot(CHECKPOINT_SYNC_URL, payload);
   for (const record of captures) {
     record.checkpointed = true;
-    await writeRecord('cards', record);
+    delete record.pendingCheckpoint;
   }
+  await writeRecords('cards', captures);
   const latest = await getJob();
   if (latest?.queueId === payload.queueId) {
     latest.remoteCapturedCount = result.capturedCount;
@@ -614,6 +763,7 @@ async function captureLoadedPage(tabId) {
     await writeRecord('cards', {
       cardId: card.cardId,
       captured: true,
+      pendingCheckpoint: 'pending',
       capturedAt: result.observedAt,
       rowCount: result.rowCount,
       unpricedRowCount: result.unpricedRowCount || 0,
@@ -631,13 +781,14 @@ async function captureLoadedPage(tabId) {
     if (job.index >= job.queue.cards.length) job.status = 'complete';
     await saveJob(job);
     if (job.status === 'running') {
-      const pending = (await allRecords('cards')).filter(record => !record.checkpointed
-        && !record.remoteCheckpoint && Number.isFinite(Date.parse(String(record.capturedAt || '')))
-        && Array.isArray(record.offers)).length;
+      // pendingRemoteCount is updated with this capture and reconciled from
+      // IndexedDB when resuming after a worker restart. Avoid getAll() here:
+      // scanning an ever-growing card store after every page made long queues
+      // progressively slower even though the 100-card checkpoint is enough.
+      const pending = Number(job.pendingRemoteCount || 0);
       if (pending >= CHECKPOINT_SIZE) {
         try {
           await syncPriceCheckpoint(job, false);
-          job = await getJob();
         } catch (error) {
           await setStatus('paused', `Checkpoint de ${pending} cartas não foi salvo no GitHub. As capturas locais foram preservadas; retome para tentar novamente. ${error.message}`);
           return;
@@ -715,24 +866,18 @@ async function restoreScheduledWork() {
       job.reason = 'Retomando a página atual após reinício da extensão.';
     }
     job.inFlight = false;
-    job.pendingRemoteCount = (await allRecords('cards')).filter(record => !record.checkpointed
-      && !record.remoteCheckpoint && Number.isFinite(Date.parse(String(record.capturedAt || '')))
-      && Array.isArray(record.offers)).length;
+    job.pendingRemoteCount = (await pendingCardCaptures()).length;
     await saveJob(job);
   }
   if (job.mode === 'card-prices' && !Number.isInteger(job.pendingRemoteCount)) {
-    job.pendingRemoteCount = (await allRecords('cards')).filter(record => !record.checkpointed
-      && !record.remoteCheckpoint && Number.isFinite(Date.parse(String(record.capturedAt || '')))
-      && Array.isArray(record.offers)).length;
+    job.pendingRemoteCount = (await pendingCardCaptures()).length;
     await saveJob(job);
   }
   if (job.retryAt) {
     await chrome.alarms.create(PAGE_RETRY_ALARM, { when: Math.max(Date.now(), job.retryAt) });
   } else if (!job.inFlight) {
     if (job.mode === 'card-prices') {
-      const pending = (await allRecords('cards')).filter(record => !record.checkpointed
-        && !record.remoteCheckpoint && Number.isFinite(Date.parse(String(record.capturedAt || '')))
-        && Array.isArray(record.offers)).length;
+      const pending = (await pendingCardCaptures()).length;
       if (pending >= CHECKPOINT_SIZE) {
         try { await syncPriceCheckpoint(job, false); }
         catch (error) {
@@ -803,20 +948,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         throw new Error('Fila inválida ou incompleta; nada foi carregado.');
       }
       queue = prioritizeQueue(queue, await getOwnedPriorityIds());
-      const db = await openDb();
-      await new Promise((resolve, reject) => {
-        const tx = db.transaction(['state', 'cards', 'editions'], 'readwrite');
-        tx.objectStore('cards').clear();
-        tx.objectStore('editions').clear();
-        tx.objectStore('state').put({
-          key: 'job', queue, queueId: currentQueueId(queue), status: 'ready', index: 0, tabId: null,
-          inFlight: false, reason: '', remoteCapturedCount: 0, pendingRemoteCount: 0,
-          importedAt: new Date().toISOString(),
-          retryCount: 0,
-        });
-        tx.oncomplete = resolve;
-        tx.onerror = () => reject(tx.error);
-      });
+      const job = {
+        mode: 'card-prices', queue, queueId: currentQueueId(queue), status: 'ready', index: 0, tabId: null,
+        inFlight: false, reason: '', remoteCapturedCount: 0, pendingRemoteCount: 0,
+        importedAt: new Date().toISOString(), retryCount: 0,
+      };
+      await replaceCollectionData(job);
       sendResponse({ ok: true, total: queue.cards.length, excluded: queue.excluded.length });
       return;
     }
@@ -892,9 +1029,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const remote = await getRemoteResume();
         await mergeRemoteProgress(job, remote.progress);
       } catch {}
-      const localCaptures = (await allRecords('cards')).filter(record => !record.checkpointed
-        && !record.remoteCheckpoint && Number.isFinite(Date.parse(String(record.capturedAt || '')))
-        && Array.isArray(record.offers)).length;
+      const localCaptures = (await pendingCardCaptures()).length;
       job.pendingRemoteCount = localCaptures;
       if (localCaptures >= CHECKPOINT_SIZE) {
         const checkpoint = await syncPriceCheckpoint(job, false);

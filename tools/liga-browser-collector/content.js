@@ -41,9 +41,8 @@ async function materializeOfferRows(container) {
   // Liga lazy-loads part of each seller row only after it enters the viewport.
   // Bring small batches into view so price, language flag and stock are ready
   // before parsing; this uses the same rendered page as a human visitor.
-  for (let index = 0; index < 4000; index += 4) {
-    const rows = container.querySelectorAll('[id^="mpline_1_"]');
-    if (index >= rows.length) break;
+  const rows = [...container.querySelectorAll('[id^="mpline_1_"]')];
+  for (let index = 0; index < rows.length; index += 4) {
     rows[Math.min(index + 3, rows.length - 1)]?.scrollIntoView({ block: 'center', behavior: 'instant' });
     await sleep(180);
   }
@@ -60,8 +59,8 @@ function normalizeLanguage(row) {
   return '';
 }
 
-function parsePrice(row) {
-  const prices = [...normalizeText(row.innerText).matchAll(/R\$\s*([\d.]+,\d{2})/g)];
+function parsePrice(text) {
+  const prices = [...text.matchAll(/R\$\s*([\d.]+,\d{2})/g)];
   if (!prices.length) return null;
   // Quando há promoção, a Liga mostra o valor antigo riscado antes do atual.
   const value = prices.at(-1)[1].replaceAll('.', '').replace(',', '.');
@@ -97,7 +96,7 @@ function extractOffers(container, card, observedAt) {
   for (const row of rows) {
     const listingId = row.id.match(/^mpline_1_(.+)$/)?.[1] || '';
     const text = normalizeText(row.innerText);
-    const priceBrl = parsePrice(row);
+    const priceBrl = parsePrice(text);
     const language = normalizeLanguage(row);
     const condition = text.match(/(?:^|\s)(NM|SP|MP|HP|M|D)(?:\s|$)/i)?.[1]?.toUpperCase() || '';
     // Liga can render a seller row before its price is available (for example,
