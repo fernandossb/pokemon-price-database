@@ -14,6 +14,8 @@
     "liga:import-browser": "node scripts/import-liga-browser-capture.mjs",
     "liga:prepare-checkpoints": "node scripts/prepare-liga-browser-checkpoints.mjs",
     "liga:sync-server": "node scripts/liga-sync-server.mjs",
+    "build:mypcards": "node scripts/build-mypcards-prices.mjs",
+    "mypcards:update": "node scripts/import-mypcards-api.mjs",
     "shard": "node scripts/process-shard.mjs",
     "consolidate": "node scripts/consolidate.mjs",
     "validate": "node scripts/validate-output.mjs",

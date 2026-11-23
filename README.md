@@ -31,14 +31,14 @@ Cada shard publica também `variantCatalog`. Assim, um enum confirmado pelas fon
 ## Fonte e cálculo de preço
 
 - Edições, nomes e números das impressões vêm do índice e das páginas normais da Liga Pokémon. O TCGdex serve apenas para preservar os IDs já usados pelo aplicativo e fazer a ponte entre idioma/acabamento e os enums existentes.
-- Todo preço publicado vem de anúncios individuais visíveis na Liga. Cada anúncio é conferido pela URL da impressão, idioma e acabamento; aceitamos condição M/NM e usamos no máximo o menor anúncio de cada vendedor.
+- Preços brasileiros da Liga vêm de anúncios individuais visíveis, conferidos por impressão, idioma e acabamento; aceitamos condição M/NM e usamos no máximo o menor anúncio de cada vendedor. A MYP Cards é uma fonte adicional, sujeita à exigência de identificação e verificação do lojista descrita abaixo.
 - A referência publicada é a mediana do menor anúncio elegível de cada vendedor distinto. Uma oferta M/NM já basta para vincular o preço; sem anúncio elegível, a variante fica sem preço e aparece em `unmatched-cards.json`.
-- Uma captura sem preço de vendedor, com correspondência incerta ou vencida não substitui o preço anterior publicado; as variantes sem anúncio elegível ficam pendentes.
+- Uma captura sem preço de vendedor, com correspondência incerta ou vencida não substitui o preço anterior publicado; variantes sem preço elegível ficam pendentes.
 - Cada oferta guarda o anúncio, a loja, a condição, o idioma, o acabamento e o horário em que a página foi lida.
 
 ## Variantes especiais
 
-Acabamentos da Liga são relacionados aos enums existentes do app. Se não houver vínculo exato de impressão, idioma ou acabamento, a variante fica sem preço e aparece em `unmatched-cards.json`; o POKECARD a mostra em **Preços pendentes**. Preço ligado à Liga com correspondência exata remove a pendência mesmo quando o campo manual está vazio. Nenhuma variante herda o preço de outra.
+Acabamentos da Liga são relacionados aos enums existentes do app. Se não houver vínculo exato de impressão, idioma ou acabamento, a variante fica sem preço e aparece em `unmatched-cards.json`; o POKECARD a mostra em **Preços pendentes**. Preço ligado à Liga com correspondência exata remove a pendência mesmo quando o campo manual está vazio. Preço da MYP Cards só a remove se trouxer identificação e confirmação do lojista verificado. Nenhuma variante herda o preço de outra.
 
 ## Arquivos publicados
 
@@ -52,10 +52,16 @@ Acabamentos da Liga são relacionados aos enums existentes do app. Se não houve
 
 A atualização validada é publicada automaticamente a cada checkpoint enviado ao repositório e ao concluir a fila. Durante a coleta, o coletor envia checkpoints a cada 100 cartas ou 10 minutos, o que ocorrer primeiro. O workflow também pode ser iniciado manualmente em **Actions → Atualizar preços pelos anúncios da Liga → Run workflow**.
 
+### MYP Cards (API oficial)
+
+A integração consulta `GET https://mypcards.com/api/v1/pokemon/precos`, mas só aceita uma linha de preço quando a resposta identifica o vendedor e declara explicitamente `sellerVerified: true`. O ID do vendedor também é obrigatório. O pipeline valida essa proveniência antes de publicar, e o POKECARD não tira uma variante da lista de preços pendentes sem esse selo.
+
+**Limitação da API pública:** o schema publicado hoje documenta preços mínimos agregados por idioma e acabamento, sem ID, perfil ou selo do vendedor. Portanto, a resposta oficial atual não comprova que o menor preço é de lojista verificado. O coletor falha de forma fechada e não publica nem atribui esses valores como verificados; a atualização MYP só poderá produzir preços quando a API fornecer dados individuais de vendedor e a confirmação do perfil. Consulte a [documentação de acesso à API](https://mypcards.com/acesso-api) e os [planos de vendedor](https://mypcards.com/site/planos).
+
 
 ## Preços brasileiros da Liga Pokémon
 
-Os preços são valores pedidos pelos vendedores, não vendas concluídas, e não incluem frete. O coletor trabalha nas páginas normais da Liga, e não usa serviço de raspagem, API paga ou fonte alternativa para preencher preços ausentes.
+Os preços são valores pedidos pelos vendedores, não vendas concluídas, e não incluem frete. O fluxo da Liga trabalha com anúncios capturados na interface normal. O fluxo MYP permanece desativado até a API fornecer identificação e confirmação do lojista para cada preço.
 
 ### Importar um snapshot local de anúncios
 

@@ -159,7 +159,77 @@ function addCatalogEnum(map, value, source, priced = false, kind = 'variant') {
  * Returns every exact enum exposed for this card by TCGdex, TCGplayer or
  * Cardmarket. No allowlist is used: a future enum is preserved automatically.
  */
-export function variantCatalog(card, tcgplayerProducts = {}) {
+function tcgplayerProductIdsForVariant(card, exact) {
+  const ids = new Set();
+  const direct = card?.pricing?.tcgplayer;
+  for (const key of [exact, exact === 'reverse' ? 'reverse-holofoil' : '', exact === 'holo' ? 'holofoil' : '']) {
+    const id = direct?.[key]?.productId;
+    if (Number.isInteger(Number(id)) && Number(id) > 0) ids.add(String(Number(id)));
+  }
+  const specialVariants = specialFoilVariants(card);
+  for (const item of Array.isArray(card?.variants_detailed) ? card.variants_detailed : []) {
+    const special = [...specialVariants].find(([, candidate]) => candidate === item)?.[0] || '';
+    const stamps = Array.isArray(item?.stamp) ? item.stamp : item?.stamp ? [item.stamp] : [];
+    const base = !stamps.length && (!item.size || item.size === 'standard') && (!item.subtype || item.subtype === 'unlimited');
+    const matches = special
+      ? special === exact
+      : base && !item.foil && (
+        (exact === 'normal' && item.type === 'normal')
+        || (['holo', 'holofoil'].includes(exact) && item.type === 'holo')
+        || (['reverse', 'reverse-holofoil'].includes(exact) && item.type === 'reverse')
+      );
+    if (!matches) continue;
+    const id = item?.thirdParty?.tcgplayer ?? item?.pricing?.tcgplayer?.holofoil?.productId
+      ?? item?.pricing?.tcgplayer?.['reverse-holofoil']?.productId ?? item?.pricing?.tcgplayer?.normal?.productId;
+    if (Number.isInteger(Number(id)) && Number(id) > 0) ids.add(String(Number(id)));
+  }
+  return ids;
+}
+
+function normalizeMypLanguage(language) {
+  const value = exactEnum(language).toLowerCase();
+  if (/^(pt|portugu[eê]s|portuguese)/.test(value)) return 'pt-br';
+  if (/^(en|english|ingl[eê]s)/.test(value)) return 'en';
+  if (/^(ja|japanese|japon[eê]s)/.test(value)) return 'ja';
+  return '';
+}
+
+function mypPrintingForVariant(exact) {
+  if (exact === 'normal') return 'normal';
+  if (['holo', 'holofoil'].includes(exact)) return 'foil';
+  if (['reverse', 'reverse-holofoil'].includes(exact) || /-reverse-holofoil$/.test(exact)) return 'reverse foil';
+  if (/-holofoil$/.test(exact)) return 'foil';
+  return '';
+}
+
+function mypCardsPrice(card, exact, language, mypcardsPrices = {}) {
+  const expectedLanguage = normalizeMypLanguage(language);
+  const expectedPrinting = mypPrintingForVariant(exact);
+  if (!expectedLanguage || !expectedPrinting) return null;
+  const byId = mypcardsPrices?.byTcgProductId || {};
+  const candidates = [];
+  for (const id of tcgplayerProductIdsForVariant(card, exact)) {
+    for (const product of byId[id] || []) {
+      for (const row of Array.isArray(product.prices) ? product.prices : []) {
+        if (row.sellerVerified !== true || !String(row.sellerId || '').trim()) continue;
+        if (normalizeMypLanguage(row.language) !== expectedLanguage) continue;
+        if (exactEnum(row.printing).toLowerCase() !== expectedPrinting) continue;
+        const value = Number(String(row.min_price ?? '').replace(',', '.'));
+        if (Number.isFinite(value) && value > 0) candidates.push({
+          valueBrl: value,
+          detail: String(product.link || 'https://mypcards.com'),
+          productId: String(product.tcg_productId || id),
+          sellerId: String(row.sellerId),
+          sellerVerified: true,
+        });
+      }
+    }
+  }
+  if (!candidates.length) return null;
+  return candidates.reduce((best, item) => item.valueBrl < best.valueBrl ? item : best);
+}
+
+export function variantCatalog(card, tcgplayerProducts = {}, mypcardsPrices = {}) {
   const found = new Map();
   const tcgdexVariants = card?.variants && typeof card.variants === 'object' ? card.variants : {};
   for (const [key, value] of Object.entries(tcgdexVariants)) {
@@ -194,6 +264,13 @@ export function variantCatalog(card, tcgplayerProducts = {}) {
   for (const [value, variant] of specialFoilVariants(card)) {
     const priced = Boolean(specialFoilTcgplayer(variant, tcgplayerProducts) || specialFoilCardmarketKeys(variant));
     addCatalogEnum(found, value, 'tcgdex', priced, 'special-foil');
+  }
+
+  for (const exact of found.keys()) {
+    const match = mypCardsPrice(card, exact, 'en', mypcardsPrices)
+      || mypCardsPrice(card, exact, 'pt-br', mypcardsPrices)
+      || mypCardsPrice(card, exact, 'ja', mypcardsPrices);
+    if (match) addCatalogEnum(found, exact, 'mypcards', true, 'market-variant');
   }
 
   return [...found.values()]
@@ -265,7 +342,7 @@ function simpleAverage(values) {
 // entre os três. Misturar TCGplayer (dólar, mercado americano) com Cardmarket
 // (euro, mercado europeu) produz um número que não corresponde a lugar nenhum.
 // TCGdex não tem preço próprio: ele republica os outros dois.
-const SOURCE_PRIORITY = ['tcgplayer', 'tcgdex', 'cardmarket'];
+const SOURCE_PRIORITY = ['mypcards', 'tcgplayer', 'tcgdex', 'cardmarket'];
 
 function providerOf(sourceId) {
   return String(sourceId || '').split(':')[0];
@@ -289,8 +366,14 @@ function pickPriorityMarket(values) {
   return { provider: '', values: [] };
 }
 
-export function resolvePrice({ card, variantEnum, fx, tcgplayerProducts = {} }) {
+export function resolvePrice({ card, variantEnum, language = 'en', fx, tcgplayerProducts = {}, mypcardsPrices = {} }) {
   const market = marketValues(card, variantEnum, fx, tcgplayerProducts);
+  const myp = mypCardsPrice(card, exactEnum(variantEnum), language, mypcardsPrices);
+  if (myp) {
+    market.sourceEnums.push({ provider: 'mypcards', value: exactEnum(variantEnum) });
+    market.values.push({ source: `mypcards:${exactEnum(variantEnum)}`, value: myp.valueBrl, detail: myp.detail,
+      sellerId: myp.sellerId, sellerVerified: myp.sellerVerified });
+  }
   if (!market.values.length) return null;
   const chosen = pickPriorityMarket(market.values);
   if (!chosen.values.length) return null;
@@ -308,7 +391,8 @@ export function resolvePrice({ card, variantEnum, fx, tcgplayerProducts = {} }) 
       source: item.source,
       valueBrl: round2(item.value),
       used: providerOf(item.source) === chosen.provider,
-      detail: null,
+      detail: item.detail || null,
+      ...(item.sellerId ? { sellerId: item.sellerId, sellerVerified: item.sellerVerified === true } : {}),
     })),
   };
 }
