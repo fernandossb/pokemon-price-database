@@ -55,10 +55,11 @@ function normalizeLanguage(row) {
 }
 
 function parsePrice(text) {
-  const prices = [...text.matchAll(/R\$\s*([\d.]+,\d{2})/g)];
+  const prices = [...text.matchAll(/R\s*\$\s*([\d.]+)\s*,\s*(\d{2})/g)];
   if (!prices.length) return null;
   // Quando há promoção, a Liga mostra o valor antigo riscado antes do atual.
-  const value = prices.at(-1)[1].replaceAll('.', '').replace(',', '.');
+  const [, reais, centavos] = prices.at(-1);
+  const value = reais.replaceAll('.', '') + '.' + centavos;
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : null;
 }
@@ -92,7 +93,7 @@ function extractOffers(container, card, observedAt) {
   for (const row of rows) {
     const listingId = row.id.match(/^mpline_1_(.+)$/)?.[1] || '';
     const text = normalizeText(row.innerText);
-    const priceBrl = parsePrice(text);
+    const priceBrl = parsePrice(text) ?? parsePrice(normalizeText(row.textContent));
     const language = normalizeLanguage(row);
     const condition = text.match(/(?:^|\s)(NM|SP|MP|HP|M|D)(?:\s|$)/i)?.[1]?.toUpperCase() || '';
     // Liga can render a seller row before its price is available (for example,
@@ -119,10 +120,7 @@ function extractOffers(container, card, observedAt) {
       .map(element => normalizeText(element.textContent)).filter(Boolean);
     const finish = extras.join(' ') || text;
     const isFoil = /foil|holo|brilh/i.test(finish);
-    // Only market-price conditions are eligible downstream. Rows are ordered
-    // cheapest first, so keep the first eligible seller for each language/finish.
-    if (!['M', 'NM'].includes(condition)) continue;
-    const groupKey = `${language}::${normalizeFinishGroup(extras.join(' '), isFoil)}`;
+    const groupKey = `${language}::${normalizeFinishGroup(extras.join(' '), isFoil)}::${condition}`;
     if (seenVariantGroups.has(groupKey)) continue;
     seenVariantGroups.add(groupKey);
     const seller = sellerFromRow(row, listingId);

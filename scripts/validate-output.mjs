@@ -77,11 +77,12 @@ for (const file of status.shardFiles || []) {
     }
     const sources = Array.isArray(item.sources) ? item.sources : [];
     if (status.priceSource === 'ligapokemon') {
+      const minimumNm = item.brazilMarket?.pricePolicy === 'minimum-nm';
       if (item.priceMarket !== 'ligapokemon' || sources.length < 1 ||
-          sources.some(source => source.source !== 'ligapokemon:listing' || source.used !== true ||
+          sources.some(source => source.source !== 'ligapokemon:listing' || (!minimumNm && source.used !== true) ||
             !/^https:\/\/(www\.)?ligapokemon\.com\.br\//i.test(source.detail || '') ||
             !String(source.seller || '').trim() || !String(source.listingId || '').trim() ||
-            !['M', 'NM'].includes(source.condition) || !Number.isFinite(Number(source.valueBrl)) ||
+            !(minimumNm ? ['NM'] : ['M', 'NM']).includes(source.condition) || !Number.isFinite(Number(source.valueBrl)) ||
             Number(source.valueBrl) <= 0 || !Number.isFinite(Date.parse(source.observedAt || '')) ||
             Date.parse(source.observedAt) > Date.now() + 5 * 60 * 1000 ||
             Date.now() - Date.parse(source.observedAt) > freshnessWindow)) {
@@ -101,10 +102,13 @@ for (const file of status.shardFiles || []) {
       const median = sellerPrices.length % 2
         ? sellerPrices[middle]
         : (sellerPrices[middle - 1] + sellerPrices[middle]) / 2;
-      if (sellerPrices.length < 1 || Math.abs(Number(item.priceBrl) - Math.round(median * 100) / 100) > 0.001 ||
+      const selected = sources.filter(source => source.used === true);
+      const expected = minimumNm ? sellerPrices[0] : Math.round(median * 100) / 100;
+      if (sellerPrices.length < 1 || Math.abs(Number(item.priceBrl) - expected) > 0.001 ||
           Number(item.brazilMarket?.sellerCount) !== sellerPrices.length ||
-          Math.abs(Number(item.brazilMarket?.medianPriceBrl) - Number(item.priceBrl)) > 0.001) {
-        throw new Error(`Mediana/preço não corresponde aos anúncios Liga de vendedores distintos: ${file} ${key}`);
+          (minimumNm ? selected.length !== 1 || Number(selected[0].valueBrl) !== expected
+            : Math.abs(Number(item.brazilMarket?.medianPriceBrl) - expected) > 0.001)) {
+        throw new Error(`Preço não corresponde aos anúncios da Liga: ${file} ${key}`);
       }
     } else {
       const used = sources.filter(source => source.used === true && String(source.source || '').split(':')[0] === item.priceMarket);

@@ -184,18 +184,16 @@ async function processOne(summary) {
     for (const enumInfo of available) {
       const variantEnum = enumInfo.value;
       const key = `${card.id}::${language}::${variantEnum}`;
-      const liga = summarizeLigaOffers(ligaOffers.get(key));
-      // Toda oferta M/NM individual já é um preço da Liga ligado; a mediana
-      // usa um valor por vendedor e funciona também com apenas uma loja.
+      const liga = summarizeLigaOffers(ligaOffers.get(key)?.filter(offer => offer.condition === 'NM'));
       const ligaReference = liga && liga.sellerCount >= 1 ? {
-        priceBrl: liga.medianPriceBrl,
+        priceBrl: liga.minimumPriceBrl,
         confidence: Math.min(85, 35 + liga.sellerCount * 10),
         matchLevel: 'exact',
         estimatedDimensions: [],
         priceMarket: 'ligapokemon',
         sourceEnums: [{ provider: 'ligapokemon', value: variantEnum }],
-        sources: liga.offers.map(offer => ({
-          source: 'ligapokemon:listing', valueBrl: offer.priceBrl, used: true,
+        sources: liga.offers.map((offer, index) => ({
+          source: 'ligapokemon:listing', valueBrl: offer.priceBrl, used: index === 0,
           detail: offer.url, seller: offer.seller, sellerId: offer.sellerId || null, listingId: offer.listingId,
           condition: offer.condition, observedAt: offer.observedAt,
         })),
@@ -237,7 +235,7 @@ async function processOne(summary) {
         updatedAt: nowIso(),
         ...resolved,
         ...(liga ? { brazilMarket: {
-          source: 'ligapokemon', sellerCount: liga.sellerCount,
+          source: 'ligapokemon', sellerCount: liga.sellerCount, pricePolicy: 'minimum-nm',
           medianPriceBrl: liga.medianPriceBrl,
           minimumPriceBrl: liga.minimumPriceBrl,
           maximumPriceBrl: liga.maximumPriceBrl,
