@@ -56,9 +56,12 @@ function normalizeLanguage(row) {
 
 function parsePrice(text) {
   const prices = [...text.matchAll(/R\s*\$\s*([\d.]+)\s*,\s*(\d{2})/g)];
-  if (!prices.length) return null;
+  // O símbolo de moeda pode aparecer separado do valor no texto da linha.
+  // Só aceite um valor sem símbolo quando ele for o único decimal visível.
+  const decimals = prices.length ? prices : [...text.matchAll(/(?<![\d.,])([\d.]+)\s*,\s*(\d{2})(?![\d.,])/g)];
+  if (!decimals.length || (!prices.length && decimals.length !== 1)) return null;
   // Quando há promoção, a Liga mostra o valor antigo riscado antes do atual.
-  const [, reais, centavos] = prices.at(-1);
+  const [, reais, centavos] = decimals.at(-1);
   const value = reais.replaceAll('.', '') + '.' + centavos;
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : null;
@@ -93,21 +96,17 @@ function extractOffers(container, card, observedAt) {
   for (const row of rows) {
     const listingId = row.id.match(/^mpline_1_(.+)$/)?.[1] || '';
     const text = normalizeText(row.innerText);
-    const priceBrl = parsePrice(text) ?? parsePrice(normalizeText(row.textContent));
+    if (!visible(row)) continue;
+    const priceBrl = parsePrice(text);
     const language = normalizeLanguage(row);
     const condition = text.match(/(?:^|\s)(NM|SP|MP|HP|M|D)(?:\s|$)/i)?.[1]?.toUpperCase() || '';
-    // Liga can render a seller row before its price is available (for example,
-    // the row contains only the currency label). Such a row is not an offer
-    // we can publish; skip it without discarding the other valid listings.
-    if (!priceBrl) {
-      unpricedRowCount += 1;
-      continue;
-    }
+    if (!priceBrl) unpricedRowCount += 1;
     if (!listingId) {
       issues.push({ listingId, text: text.slice(0, 180), missing: ['listingId'] });
       continue;
     }
     if (!condition || !language) {
+      if (!priceBrl) continue;
       // Preserve incomplete rows for review without guessing fields or prices.
       // A missing condition/language must not stop the rest of the queue.
       unparsedRows.push({
@@ -123,6 +122,8 @@ function extractOffers(container, card, observedAt) {
     const groupKey = `${language}::${normalizeFinishGroup(extras.join(' '), isFoil)}::${condition}`;
     if (seenVariantGroups.has(groupKey)) continue;
     seenVariantGroups.add(groupKey);
+    // Uma linha posterior não pode substituir o primeiro anúncio do grupo.
+    if (!priceBrl) continue;
     const seller = sellerFromRow(row, listingId);
     const quantityInput = row.querySelector(`#mpitem_${CSS.escape(listingId)}`);
     const stock = [...text.matchAll(/\bde\s+(\d+)\b/gi)].map(match => Number(match[1])).at(-1) || null;
