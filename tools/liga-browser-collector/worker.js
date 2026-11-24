@@ -392,15 +392,18 @@ async function installAndStartQueue(queue, tabId, progress = null, visualOcr = f
     && progress?.catalogHash === queue.catalogHash && Array.isArray(progress.cardIds)
     ? progress.cardIds.map(String) : []);
   const resetAt = Date.parse(String(queue.resetAt || queue.generatedAt || ''));
+  const sameLocalQueue = previousJob?.mode === 'card-prices'
+    && previousJob.queueId === queueIdentity
+    && sameLigaPrintQueue(previousJob.queue, queue);
   const canRebaseLocalCaptures = previousJob?.mode === 'card-prices'
-    && previousJob.queueId === queue.supersedesQueueId
     && sameLigaPrintQueue(previousJob.queue, queue)
-    && Number.isFinite(resetAt);
+    && (sameLocalQueue || (previousJob.queueId === queue.supersedesQueueId && Number.isFinite(resetAt)));
   const preservedCaptures = canRebaseLocalCaptures
     ? (await allRecords('cards')).filter(record => !record.remoteCheckpoint
       && !remoteIds.has(String(record.cardId))
       && Number.isFinite(Date.parse(String(record.capturedAt || '')))
-      && Date.parse(record.capturedAt) >= resetAt && Array.isArray(record.offers))
+      && (sameLocalQueue || Date.parse(record.capturedAt) >= resetAt)
+      && Array.isArray(record.offers))
     : [];
   const preservedIds = new Set(preservedCaptures.map(record => String(record.cardId)));
   const completedIds = new Set([...remoteIds, ...preservedIds]);
@@ -411,7 +414,9 @@ async function installAndStartQueue(queue, tabId, progress = null, visualOcr = f
     index: index < 0 ? queue.cards.length : index, tabId,
     inFlight: false, retryCount: 0, remoteCapturedCount: remoteIds.size, pendingRemoteCount: preservedCaptures.length,
     reason: preservedCaptures.length
-      ? `Fila atualizada; preservando ${preservedCaptures.length} capturas locais feitas após o reset.`
+      ? sameLocalQueue
+        ? `Retomando a fila local; preservando ${preservedCaptures.length} capturas locais e ${remoteIds.size} cartas já salvas no GitHub.`
+        : `Fila atualizada; preservando ${preservedCaptures.length} capturas locais feitas após o reset.`
       : remoteIds.size ? `Retomando do checkpoint remoto: ${remoteIds.size} cartas já salvas.`
         : 'Fila atualizada do GitHub; iniciando a leitura dos anúncios.', importedAt: new Date().toISOString(),
   };
@@ -658,10 +663,8 @@ async function readVisualOffers(tabId, offers) {
     });
     if (!rect) continue;
     const tab = await chrome.tabs.get(tabId);
-    if (!tab.active || tab.url !== offer.url) throw new Error('Mantenha a aba de coleta ativa na janela da Liga.');
-    const screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
-    const [active] = await chrome.tabs.query({ windowId: tab.windowId, active: true });
-    if (active?.id !== tabId || active.url !== offer.url) throw new Error('A aba mudou durante a captura.');
+    if (tab.url !== offer.url) throw new Error('A página da Liga mudou durante a captura.');
+    const screenshot = await captureTabScreenshot(tabId);
     const bitmap = await createImageBitmap(await (await fetch(screenshot)).blob());
     const canvas = new OffscreenCanvas(384, 104);
     try {
@@ -676,6 +679,28 @@ async function readVisualOffers(tabId, offers) {
     if (priceBrl > 0) matches.push({ ...offer, priceBrl });
   }
   return matches;
+}
+
+async function captureTabScreenshot(tabId) {
+  const tab = await chrome.tabs.get(tabId);
+  if (!/^https:\/\/(?:www\.)?ligapokemon\.com\.br\//i.test(tab.url || '')) {
+    throw new Error('O OCR só pode capturar páginas da Liga Pokémon.');
+  }
+  const target = { tabId };
+  let attached = false;
+  try {
+    await chrome.debugger.attach(target, '1.3');
+    attached = true;
+    const screenshot = await chrome.debugger.sendCommand(target, 'Page.captureScreenshot', {
+      format: 'png', fromSurface: true, captureBeyondViewport: false,
+    });
+    if (!screenshot?.data) throw new Error('O Chrome não retornou a imagem da página.');
+    return `data:image/png;base64,${screenshot.data}`;
+  } finally {
+    if (attached) {
+      try { await chrome.debugger.detach(target); } catch {}
+    }
+  }
 }
 
 async function createBackgroundTab() {
