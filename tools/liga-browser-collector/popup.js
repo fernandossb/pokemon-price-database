@@ -72,6 +72,20 @@ $('resumeRemote').addEventListener('click', async () => {
   } catch (error) { status.value = error.message; }
 });
 
+$('restartRemote').addEventListener('click', async event => {
+  if (!confirm('Começar uma nova rodada do zero no GitHub? Todos os computadores passarão a usar a nova fila.')) return;
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    status.value = 'Publicando uma nova fila…';
+    status.value = (await send({ type: 'RESTART_REMOTE' })).message;
+  } catch (error) {
+    status.value = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
 $('discover').addEventListener('click', async () => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

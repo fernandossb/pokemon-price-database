@@ -153,6 +153,29 @@ async function publish(files, message) {
   return { committed: true, branch };
 }
 
+async function restartPriceQueue({ expectedQueueId } = {}) {
+  const { queue } = await remoteResumeState();
+  if (expectedQueueId !== queueId(queue)) {
+    throw new Error('A fila mudou no GitHub. Confira a rodada atual antes de reiniciar.');
+  }
+  const { stdout } = await run('git', ['status', '--porcelain', '--untracked-files=no']);
+  if (stdout.trim()) throw new Error('Há alterações locais no repositório. Salve-as antes de reiniciar.');
+  const branch = process.env.LIGA_SYNC_BRANCH || 'main';
+  await run('git', ['merge', '--ff-only', `origin/${branch}`]);
+  const now = new Date().toISOString();
+  const { supersedesQueueId, ...previous } = queue;
+  const fresh = { ...previous, generatedAt: now, resetAt: now };
+  const progress = {
+    schemaVersion: 1, source: 'ligapokemon-crawl-progress',
+    queueId: queueId(fresh), catalogHash: fresh.catalogHash,
+    completedIndices: [], checkpointFiles: [], complete: false, updatedAt: now,
+  };
+  await atomicJson(QUEUE_FILE, fresh);
+  await atomicJson(PROGRESS_FILE, progress);
+  await publish([QUEUE_FILE, PROGRESS_FILE], 'Iniciar nova rodada de coleta da Liga');
+  return { ok: true, queue: fresh, progress: { ...progress, cardIds: [], capturedCount: 0 } };
+}
+
 async function receiveEditionIndex(snapshot) {
   if (snapshot?.schemaVersion !== 1 || snapshot?.source !== 'ligapokemon-browser-edition-index'
     || snapshot.coverage?.complete !== true || snapshot.coverage?.editionCount !== 813
@@ -312,7 +335,7 @@ const server = http.createServer(async (request, response) => {
     catch (error) { send(response, 400, { ok: false, error: error.message }); }
     return;
   }
-  if (request.method !== 'POST' || !['/sync/editions', '/sync/prices', '/sync/checkpoint'].includes(request.url)) {
+  if (request.method !== 'POST' || !['/sync/editions', '/sync/prices', '/sync/checkpoint', '/sync/restart'].includes(request.url)) {
     send(response, 404, { ok: false, error: 'Rota não encontrada.' });
     return;
   }
@@ -328,6 +351,7 @@ const server = http.createServer(async (request, response) => {
   try {
     const snapshot = await readBody(request);
     const result = request.url === '/sync/editions' ? await receiveEditionIndex(snapshot)
+      : request.url === '/sync/restart' ? await restartPriceQueue(snapshot)
       : request.url === '/sync/checkpoint' ? await receivePriceCheckpoint(snapshot)
         : await receivePriceCapture(snapshot);
     send(response, 200, result);

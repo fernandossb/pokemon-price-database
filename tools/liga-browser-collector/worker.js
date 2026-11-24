@@ -1011,8 +1011,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: true, total: queue.cards.length, excluded: queue.excluded.length });
       return;
     }
-    if (message?.type === 'RESUME_REMOTE') {
-      const remote = await getRemoteResume();
+    if (message?.type === 'RESUME_REMOTE' || message?.type === 'RESTART_REMOTE') {
+      let remote = await getRemoteResume();
+      const restarting = message.type === 'RESTART_REMOTE';
+      if (restarting) {
+        remote = await postSnapshot(new URL('/sync/restart', RESUME_SYNC_URL), {
+          expectedQueueId: currentQueueId(remote.queue),
+        });
+      }
       if (remote.progress?.complete) {
         sendResponse({ ok: true, message: `A coleta desta fila já está completa (${remote.progress.capturedCount}/${remote.queue.cards.length}).` });
         return;
@@ -1024,7 +1030,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const latest = await getJob();
       sendResponse({ ok: true, message: latest.status === 'complete'
         ? `Fila restaurada: ${latest.queue.cards.length} cartas já salvas; confirmando a publicação final.`
-        : `Fila restaurada do GitHub; retomando em ${latest.index + 1}/${latest.queue.cards.length}, com ${latest.remoteCapturedCount || 0} cartas já salvas remotamente.` });
+        : restarting ? `Nova rodada iniciada em 0/${latest.queue.cards.length} cartas salvas.`
+          : `Fila restaurada do GitHub; retomando em ${latest.index + 1}/${latest.queue.cards.length}, com ${latest.remoteCapturedCount || 0} cartas já salvas remotamente.` });
       return;
     }
     if (message?.type === 'START_EDITION_DISCOVERY') {
