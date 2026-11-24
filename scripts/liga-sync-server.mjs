@@ -144,10 +144,10 @@ async function publish(files, message) {
   if (!changed.stdout.trim()) return { committed: false, branch };
   await run('git', ['-c', 'user.name=POKECARD Liga Sync', '-c', 'user.email=actions@users.noreply.github.com', 'commit', '-m', message]);
   try {
-    // Commit the staged snapshot before rebasing. Autostash can leave conflict
-    // markers inside JSON progress files when another computer publishes at
-    // the same time; a failed rebase must never be committed as a checkpoint.
-    await run('git', ['pull', '--rebase', 'origin', branch]);
+    // Commit the staged snapshot before rebasing. Other local edits (such as
+    // an extension update being tested) must not prevent checkpoint publishing.
+    // Autostash keeps those edits out of the checkpoint commit while Git rebases.
+    await run('git', ['pull', '--rebase', '--autostash', 'origin', branch]);
   } catch (error) {
     await run('git', ['rebase', '--abort']).catch(() => {});
     throw new Error(`Conflito ao atualizar o GitHub em paralelo. O checkpoint local foi mantido; tente sincronizar novamente. ${error.message}`);
