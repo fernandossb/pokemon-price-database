@@ -86,6 +86,16 @@ $('restartRemote').addEventListener('click', async event => {
   }
 });
 
+$('resumeOcr').addEventListener('click', async () => {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id || !/^https:\/\/(?:www\.)?ligapokemon\.com\.br\//i.test(tab.url || '')) {
+      throw new Error('Abra a Liga Pokémon na aba desta janela antes de iniciar.');
+    }
+    status.value = (await send({ type: 'RESUME_REMOTE', ocrTabId: tab.id })).message;
+  } catch (error) { status.value = error.message; }
+});
+
 $('discover').addEventListener('click', async () => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });

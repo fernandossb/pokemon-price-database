@@ -1,6 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -176,6 +177,29 @@ async function restartPriceQueue({ expectedQueueId } = {}) {
   return { ok: true, queue: fresh, progress: { ...progress, cardIds: [], capturedCount: 0 } };
 }
 
+async function readPriceImage({ png } = {}) {
+  if (process.platform !== 'win32') throw new Error('O OCR local requer Windows.');
+  if (typeof png !== 'string' || png.length > 200_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(png)) {
+    throw new Error('Recorte de preço inválido.');
+  }
+  const image = Buffer.from(png, 'base64');
+  if (image.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' || image.length < 24
+    || image.readUInt32BE(16) > 800 || image.readUInt32BE(20) > 240) throw new Error('Dimensões do recorte inválidas.');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pokecard-price-'));
+  const file = path.join(dir, 'price.png');
+  try {
+    await fs.writeFile(file, image);
+    const { stdout } = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-File',
+      path.join(ROOT, 'scripts/read-liga-price-ocr.ps1'), file], { timeout: 10000 });
+    const match = stdout.trim().match(/^R\s*[\$S]\s*([0-9oO.]+)\s*,\s*(\d{2})$/i);
+    const priceBrl = match ? Number(match[1].replace(/[oO]/g, '0').replaceAll('.', '') + '.' + match[2]) : null;
+    return { ok: true, priceBrl: Number.isFinite(priceBrl) && priceBrl > 0 ? priceBrl : null };
+  } finally {
+    await fs.unlink(file).catch(() => {});
+    await fs.rmdir(dir).catch(() => {});
+  }
+}
+
 async function receiveEditionIndex(snapshot) {
   if (snapshot?.schemaVersion !== 1 || snapshot?.source !== 'ligapokemon-browser-edition-index'
     || snapshot.coverage?.complete !== true || snapshot.coverage?.editionCount !== 813
@@ -335,12 +359,17 @@ const server = http.createServer(async (request, response) => {
     catch (error) { send(response, 400, { ok: false, error: error.message }); }
     return;
   }
-  if (request.method !== 'POST' || !['/sync/editions', '/sync/prices', '/sync/checkpoint', '/sync/restart'].includes(request.url)) {
+  if (request.method !== 'POST' || !['/sync/editions', '/sync/prices', '/sync/checkpoint', '/sync/restart', '/sync/ocr-price'].includes(request.url)) {
     send(response, 404, { ok: false, error: 'Rota não encontrada.' });
     return;
   }
   if (!authorizedExtensionRequest(request, allowedExtensionOrigin)) {
     send(response, 403, { ok: false, error: `Origem não autorizada para o coletor POKECARD (recebida: ${origin || 'vazia'}).` });
+    return;
+  }
+  if (request.url === '/sync/ocr-price') {
+    try { send(response, 200, await readPriceImage(await readBody(request))); }
+    catch (error) { send(response, 400, { ok: false, error: error.message }); }
     return;
   }
   if (syncLock) {

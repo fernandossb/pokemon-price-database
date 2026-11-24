@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "POKECARD · Coletor da Liga",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "description": "Coleta anúncios em checkpoints, retoma pelo GitHub e pausa diante de desafios ou bloqueios da Liga.",
-  "permissions": ["alarms", "webNavigation", "webRequest"],
+  "permissions": ["alarms", "webNavigation", "webRequest", "activeTab"],
   "host_permissions": [
     "https://www.ligapokemon.com.br/*",
     "https://ligapokemon.com.br/*",

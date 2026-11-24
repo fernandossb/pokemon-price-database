@@ -378,7 +378,7 @@ async function getRemoteResume() {
   return payload;
 }
 
-async function installAndStartQueue(queue, tabId, progress = null) {
+async function installAndStartQueue(queue, tabId, progress = null, visualOcr = false) {
   if (queue?.source !== 'ligapokemon-version-map'
     || queue?.schemaVersion !== 1
     || !Array.isArray(queue.cards) || !Array.isArray(queue.excluded)
@@ -407,7 +407,7 @@ async function installAndStartQueue(queue, tabId, progress = null) {
   queue = prioritizeQueue(queue, await getOwnedPriorityIds(), completedIds);
   const index = queue.cards.findIndex(card => !completedIds.has(String(card.cardId)));
   const job = {
-    mode: 'card-prices', queue, queueId: queueIdentity, status: 'running',
+    mode: 'card-prices', queue, queueId: queueIdentity, status: 'running', visualOcr,
     index: index < 0 ? queue.cards.length : index, tabId,
     inFlight: false, retryCount: 0, remoteCapturedCount: remoteIds.size, pendingRemoteCount: preservedCaptures.length,
     reason: preservedCaptures.length
@@ -650,6 +650,34 @@ async function capturePriceSnapshot(job) {
   };
 }
 
+async function readVisualOffers(tabId, offers) {
+  const matches = [];
+  for (const offer of offers) {
+    const rect = await sendPageMessage(tabId, {
+      type: 'LOCATE_LIGA_VISUAL_PRICE', listingId: offer.listingId, url: offer.url,
+    });
+    if (!rect) continue;
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab.active || tab.url !== offer.url) throw new Error('Mantenha a aba de coleta ativa na janela da Liga.');
+    const screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+    const [active] = await chrome.tabs.query({ windowId: tab.windowId, active: true });
+    if (active?.id !== tabId || active.url !== offer.url) throw new Error('A aba mudou durante a captura.');
+    const bitmap = await createImageBitmap(await (await fetch(screenshot)).blob());
+    const canvas = new OffscreenCanvas(384, 104);
+    try {
+      const scale = bitmap.width / rect.viewportWidth;
+      canvas.getContext('2d').drawImage(bitmap, rect.x * scale, rect.y * scale,
+        rect.width * scale, rect.height * scale, 0, 0, canvas.width, canvas.height);
+    } finally { bitmap.close(); }
+    const bytes = new Uint8Array(await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer());
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    const { priceBrl } = await postSnapshot(new URL('/sync/ocr-price', RESUME_SYNC_URL), { png: btoa(binary) });
+    if (priceBrl > 0) matches.push({ ...offer, priceBrl });
+  }
+  return matches;
+}
+
 async function createBackgroundTab() {
   const tab = await chrome.tabs.create({ url: 'about:blank', active: false });
   if (!tab?.id) throw new Error('Não foi possível abrir a aba de coleta em segundo plano.');
@@ -813,6 +841,16 @@ async function captureLoadedPage(tabId) {
         : '';
       await setStatus('paused', `Coleta pausada em ${card.cardId}: ${result?.reason || 'erro sem detalhe'}${details}`);
       return;
+    }
+    if (job.visualOcr && result.visualOffers?.length) {
+      try { result.offers.push(...await readVisualOffers(tabId, result.visualOffers)); }
+      catch (error) {
+        await setStatus('paused', `OCR pausado em ${card.cardId}: ${error.message}`);
+        return;
+      }
+      const current = await getJob();
+      if (current?.status !== 'running' || current.queueId !== job.queueId
+        || current.tabId !== tabId || current.index !== job.index) return;
     }
     await writeRecord('cards', {
       cardId: card.cardId,
@@ -1024,9 +1062,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return;
       }
       const previous = await getJob();
-      const backgroundTabId = await createBackgroundTab();
-      await installAndStartQueue(remote.queue, backgroundTabId, remote.progress);
-      await closeOldScannerTab(previous?.tabId, backgroundTabId, message.tabId);
+      const visualOcr = Number.isInteger(message.ocrTabId);
+      const backgroundTabId = visualOcr ? message.ocrTabId : await createBackgroundTab();
+      await installAndStartQueue(remote.queue, backgroundTabId, remote.progress, visualOcr);
+      if (!previous?.visualOcr) await closeOldScannerTab(previous?.tabId, backgroundTabId, message.tabId);
       const latest = await getJob();
       sendResponse({ ok: true, message: latest.status === 'complete'
         ? `Fila restaurada: ${latest.queue.cards.length} cartas já salvas; confirmando a publicação final.`
@@ -1098,6 +1137,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         job.pendingRemoteCount = 0;
       }
       const oldTabId = job.tabId;
+      const oldVisualOcr = job.visualOcr;
+      job.visualOcr = false;
       job.tabId = await createBackgroundTab();
       job.status = 'running';
       job.reason = '';
@@ -1110,7 +1151,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       await saveJob(job);
       await schedulePeriodicCheckpoint(job);
       await navigateToCurrent(job);
-      await closeOldScannerTab(oldTabId, job.tabId, message.tabId);
+      if (!oldVisualOcr) await closeOldScannerTab(oldTabId, job.tabId, message.tabId);
       await chrome.action.setBadgeText({ text: '' });
       sendResponse({ ok: true, message: `Coleta iniciada em segundo plano em ${job.index + 1}/${job.queue.cards.length}. Uma página por vez.` });
       return;

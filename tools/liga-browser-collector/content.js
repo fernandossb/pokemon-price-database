@@ -89,6 +89,7 @@ function sellerFromRow(row, listingId) {
 function extractOffers(container, card, observedAt) {
   const rows = [...container.querySelectorAll('[id^="mpline_1_"]')];
   const offers = [];
+  const visualOffers = [];
   const issues = [];
   const unparsedRows = [];
   const seenVariantGroups = new Set();
@@ -123,11 +124,10 @@ function extractOffers(container, card, observedAt) {
     if (seenVariantGroups.has(groupKey)) continue;
     seenVariantGroups.add(groupKey);
     // Uma linha posterior não pode substituir o primeiro anúncio do grupo.
-    if (!priceBrl) continue;
     const seller = sellerFromRow(row, listingId);
     const quantityInput = row.querySelector(`#mpitem_${CSS.escape(listingId)}`);
     const stock = [...text.matchAll(/\bde\s+(\d+)\b/gi)].map(match => Number(match[1])).at(-1) || null;
-    offers.push({
+    const offer = {
       cardId: card.cardId,
       listingId,
       seller: seller.seller,
@@ -141,9 +141,30 @@ function extractOffers(container, card, observedAt) {
       stock: stock || (quantityInput ? Number(quantityInput.value) || null : null),
       url: location.href,
       observedAt,
-    });
+    };
+    if (priceBrl) offers.push(offer);
+    else visualOffers.push(offer);
   }
-  return { offers, issues, unparsedRows, rowCount: rows.length, unpricedRowCount, unparsedRowCount: unparsedRows.length };
+  return { offers, visualOffers, issues, unparsedRows, rowCount: rows.length, unpricedRowCount, unparsedRowCount: unparsedRows.length };
+}
+
+function placeVisualPrice(listingId) {
+  const row = document.getElementById(`mpline_1_${listingId}`);
+  if (!visible(row)) return null;
+  const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!/^\s*R\s*\$\s*$/.test(node.nodeValue || '') || !visible(node.parentElement)) continue;
+    row.scrollIntoView({ block: 'center', behavior: 'instant' });
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const rect = range.getBoundingClientRect();
+    const x = Math.max(0, rect.left - 4);
+    const y = Math.max(0, rect.top - 5);
+    const width = Math.min(innerWidth - x, rect.width + 92);
+    const height = Math.min(innerHeight - y, rect.height + 10);
+    if (rect.width > 0 && width > 0 && height > 0) return { x, y, width, height, viewportWidth: innerWidth };
+  }
+  return null;
 }
 
 function parseEditionLink(anchor) {
@@ -333,6 +354,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     captureSetVersions(message.edition).then(sendResponse)
       .catch(error => sendResponse({ ok: false, reason: 'capture_error', message: error.message }));
     return true;
+  }
+  if (message?.type === 'LOCATE_LIGA_VISUAL_PRICE') {
+    sendResponse(location.href === message.url && !isProtectionOrRateLimitPage()
+      ? placeVisualPrice(message.listingId) : null);
+    return;
   }
   if (message?.type !== 'CAPTURE_LIGA_CARD') return;
   (async () => {
