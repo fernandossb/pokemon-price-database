@@ -1,9 +1,10 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createWorker, PSM } from 'tesseract.js';
+import eng from '@tesseract.js-data/eng';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOST = '127.0.0.1';
@@ -13,6 +14,7 @@ const PROGRESS_FILE = 'data/ligapokemon-browser-progress.json';
 const QUEUE_FILE = 'data/ligapokemon-browser-queue.json';
 const CHECKPOINT_DIR = 'data/ligapokemon-browser-checkpoints';
 let syncLock = false;
+let priceOcrWorkerPromise;
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -177,27 +179,36 @@ async function restartPriceQueue({ expectedQueueId } = {}) {
   return { ok: true, queue: fresh, progress: { ...progress, cardIds: [], capturedCount: 0 } };
 }
 
+function parseOcrPrice(text) {
+  const normalized = String(text || '').replace(/[Oo]/g, '0');
+  const match = normalized.match(/(?:R\s*[$S5]\s*)?((?:\d{1,3}(?:\.\d{3})+|\d+)[,.]\d{2})/i);
+  if (!match) return null;
+  const value = Number(match[1].replaceAll('.', '').replace(',', '.'));
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
 async function readPriceImage({ png } = {}) {
-  if (process.platform !== 'win32') throw new Error('O OCR local requer Windows.');
   if (typeof png !== 'string' || png.length > 200_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(png)) {
     throw new Error('Recorte de preço inválido.');
   }
   const image = Buffer.from(png, 'base64');
   if (image.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' || image.length < 24
     || image.readUInt32BE(16) > 800 || image.readUInt32BE(20) > 240) throw new Error('Dimensões do recorte inválidas.');
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pokecard-price-'));
-  const file = path.join(dir, 'price.png');
-  try {
-    await fs.writeFile(file, image);
-    const { stdout } = await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-File',
-      path.join(ROOT, 'scripts/read-liga-price-ocr.ps1'), file], { timeout: 10000 });
-    const match = stdout.trim().match(/^R\s*[\$S]\s*([0-9oO.]+)\s*,\s*(\d{2})$/i);
-    const priceBrl = match ? Number(match[1].replace(/[oO]/g, '0').replaceAll('.', '') + '.' + match[2]) : null;
-    return { ok: true, priceBrl: Number.isFinite(priceBrl) && priceBrl > 0 ? priceBrl : null };
-  } finally {
-    await fs.unlink(file).catch(() => {});
-    await fs.rmdir(dir).catch(() => {});
-  }
+  priceOcrWorkerPromise ||= createWorker('eng', 1, {
+    langPath: eng.langPath,
+    gzip: true,
+    logger: () => {},
+  }).then(async worker => {
+    await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
+    return worker;
+  }).catch(error => {
+    priceOcrWorkerPromise = null;
+    throw error;
+  });
+  const worker = await priceOcrWorkerPromise;
+  const result = await worker.recognize(image);
+  const priceBrl = result.data.confidence >= 35 ? parseOcrPrice(result.data.text) : null;
+  return { ok: true, priceBrl, confidence: result.data.confidence };
 }
 
 async function receiveEditionIndex(snapshot) {
